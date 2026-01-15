@@ -7,18 +7,23 @@ import {
 import { PrismaService } from '../prisma.service';
 import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { AuthService } from './auth.service';
+import { AuthResponseDto } from './dto/auth-response.dto';
+import { RegisterUserDto } from './dto/register-user.dto';
+import { LoginUserDto } from './dto/login-user.dto';
+import { UserDto } from './dto/user-response.dto';
 
 @Injectable()
 export class UserService {
   private readonly logger = new Logger(UserService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private authService: AuthService,
+  ) {}
 
-  async register(
-    username: string,
-    email: string,
-    password: string,
-  ): Promise<User> {
+  async register(dto: RegisterUserDto): Promise<AuthResponseDto> {
+    const { username, email } = dto;
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [{ username }, { email }],
@@ -30,13 +35,13 @@ export class UserService {
     }
 
     const salt = await bcrypt.genSalt();
-    const passwordHash = await bcrypt.hash(password, salt);
+    const passwordHash = await bcrypt.hash(dto.password, salt);
 
     // Create user and empty wallet transactionally
     const user = await this.prisma.user.create({
       data: {
-        username,
-        email,
+        username: dto.username,
+        email: dto.email,
         passwordHash,
         wallet: {
           create: {
@@ -47,20 +52,39 @@ export class UserService {
     });
 
     this.logger.log(`User registered: ${user.username}`);
-    return user;
+    const accessToken = await this.authService.generateToken(user);
+
+    return {
+      user: this.sanitizeUser(user),
+      accessToken,
+    };
   }
 
-  async login(email: string, password: string): Promise<User> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+  async login(dto: LoginUserDto): Promise<AuthResponseDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return user;
+    const accessToken = await this.authService.generateToken(user);
+
+    return {
+      user: this.sanitizeUser(user),
+      accessToken,
+    };
   }
 
-  async findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+  async findById(id: string): Promise<UserDto | null> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    return user ? this.sanitizeUser(user) : null;
+  }
+
+  private sanitizeUser(user: User): UserDto {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash, ...result } = user;
+    return result;
   }
 }
