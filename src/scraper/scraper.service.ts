@@ -36,15 +36,20 @@ export class ScraperService {
     return now;
   }
 
-  async inspectFlashscoreSelectors() {
-    this.logger.log('Starting Flashscore Inspection...');
+  async inspectFlashscoreSelectors(sport: string = 'football') {
+    this.logger.log(`Starting Flashscore Inspection for sport: ${sport}...`);
     let browser: Browser | null = null;
     try {
-      browser = await chromium.launch({ headless: true }); // Headless false if debugging visually
+      browser = await chromium.launch({ headless: true });
       const page: Page = await browser.newPage();
 
-      this.logger.log('Navigating to Flashscore...');
-      await page.goto(EXTERNAL_URLS.FLASHSCORE_BASE, {
+      const url =
+        sport === 'football'
+          ? EXTERNAL_URLS.FLASHSCORE_BASE
+          : `${EXTERNAL_URLS.FLASHSCORE_BASE}${sport}/`;
+
+      this.logger.log(`Navigating to ${url}...`);
+      await page.goto(url, {
         waitUntil: 'domcontentloaded',
         timeout: 60000,
       });
@@ -101,34 +106,40 @@ export class ScraperService {
       this.logger.log(`Found ${matches.length} matches:`);
       this.logger.log(JSON.stringify(matches, null, 2));
 
-      // Select the first match for LLM testing
-      const matchToProcess: MatchData =
-        matches.length > 0
-          ? {
-              homeTeam: matches[0].home || 'Unknown Home',
-              awayTeam: matches[0].away || 'Unknown Away',
-              startTime: matches[0].time || new Date().toISOString(),
-              source: 'flashscore-scraped',
-            }
-          : {
-              homeTeam: 'Test Home Team',
-              awayTeam: 'Test Away Team',
-              startTime: new Date().toISOString(),
-              source: 'test-dummy',
-            };
+      if (matches.length === 0) {
+        this.logger.warn('No matches found to process.');
+        throw new Error('No matches found.');
+      }
+
+      // Select the first match for LLM testing (Production: Iterate all or queue them)
+      const matchToProcess: MatchData = {
+        homeTeam: matches[0].home || 'Unknown Home',
+        awayTeam: matches[0].away || 'Unknown Away',
+        startTime: matches[0].time || new Date().toISOString(),
+        source: 'flashscore-scraped',
+        sport: sport,
+      };
 
       this.logger.log(
         `Testing LLM with Match: ${matchToProcess.homeTeam} vs ${matchToProcess.awayTeam}`,
       );
+      // Pass sport context to generating markets (TODO: Update LLM Service to use it if needed)
       const aiMarkets = await this.llmService.generateMarkets(matchToProcess);
 
       // --- PERSISTENCE LAYER ---
-      // We must save this to DB so the Scheduler can act on it
-      const eventId = `test-${Date.now()}`; // fast unique ID for demo
+      // composite ID: team vs team - date
+      const sanitize = (s: string) =>
+        s.replace(/[^a-z0-9]/gi, '').toLowerCase();
       const parsedStartTime = this.parseTime(matchToProcess.startTime);
+      const eventId = `${sanitize(matchToProcess.homeTeam)}-vs-${sanitize(matchToProcess.awayTeam)}-${parsedStartTime.toISOString().split('T')[0]}`;
 
-      const savedEvent = await this.prisma.event.create({
-        data: {
+      const savedEvent = await this.prisma.event.upsert({
+        where: { externalId: eventId },
+        update: {
+          status: 'IN_PLAY', // Update status if re-scraped (simplified logic)
+          // We don't overwrite markets to avoid destroying existing state
+        },
+        create: {
           externalId: eventId,
           homeTeam: matchToProcess.homeTeam,
           awayTeam: matchToProcess.awayTeam,
@@ -136,7 +147,8 @@ export class ScraperService {
           projectedEnd: new Date(
             parsedStartTime.getTime() + 2 * 60 * 60 * 1000,
           ), // +2h
-          status: 'SCHEDULED', // Force SCHEDULED so we can test Locking logic
+          status: 'SCHEDULED',
+          sport: sport,
           markets: {
             create: aiMarkets.map((m) => ({
               name: m.name,
@@ -162,6 +174,66 @@ export class ScraperService {
     } finally {
       if (browser) await browser.close();
     }
+  }
+
+  async scrapeAllSports() {
+    // Full list of sports discovered from Flashscore menu
+    const sports = [
+      'football',
+      'tennis',
+      'basketball',
+      'hockey',
+      'cricket',
+      'baseball',
+      'rugby-union',
+      'american-football',
+      'aussie-rules',
+      'badminton',
+      'bandy',
+      'beach-soccer',
+      'beach-volleyball',
+      'boxing',
+      'cycling',
+      'darts',
+      'esports',
+      'field-hockey',
+      'floorball',
+      'futsal',
+      'golf',
+      'handball',
+      'horse-racing',
+      'kabaddi',
+      'mma',
+      'motorsport',
+      'netball',
+      'pesapallo',
+      'rugby-league',
+      'snooker',
+      'table-tennis',
+      'volleyball',
+      'water-polo',
+      'winter-sports',
+    ];
+
+    const results = [];
+
+    for (const sport of sports) {
+      try {
+        this.logger.log(`Starting scrape for sport: ${sport}`);
+        const result = await this.inspectFlashscoreSelectors(sport);
+        results.push({
+          sport,
+          success: true,
+          count: result.scrapedMatches.length,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to scrape sport: ${sport}`, error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        results.push({ sport, success: false, error: errorMessage });
+      }
+    }
+    return results;
   }
 
   async findMatchResult(

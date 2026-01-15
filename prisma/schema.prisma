@@ -17,6 +17,7 @@ model Event {
   awayTeam       String
   league         String?
   source         String   @default("flashscore")
+  sport          String   @default("football") // e.g. "football", "tennis", "basketball"
   startTime      DateTime
   projectedEnd   DateTime
   status         String      @default("SCHEDULED")

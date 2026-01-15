@@ -25,8 +25,8 @@ export class LlmService {
 
     // Fallback if no key is present (for testing without billing)
     if (!apiKey) {
-      this.logger.warn('No OpenRouter Key found. Returning mock markets.');
-      return this.mockMarkets(matchData);
+      this.logger.error('No OpenRouter Key found. Cannot generate markets.');
+      throw new Error('Missing OPENROUTER_API_KEY');
     }
 
     try {
@@ -35,11 +35,12 @@ export class LlmService {
         
         Input Data:
 - Event: ${matchData.homeTeam} vs ${matchData.awayTeam}
+- Sport Context: ${matchData.sport || 'Unknown'} 
 - Context: ${matchData.league || matchData.source || 'Unknown Source'}
 - Time: ${matchData.startTime}
 
 Task:
-1. Identify the SPORT based on the teams and context(e.g., "Football", "Basketball", "Esports", "Unknown").
+1. Verify the SPORT is ${matchData.sport || 'correct based on teams'}.
         2. Generate 3 - 5 engaging betting markets suitable for this sport. 
         3. Since this is a POOL system, DO NOT generate odds.Just the market name and valid outcomes.
 
@@ -184,14 +185,5 @@ Example:
       this.logger.error('Failed to settle markets via LLM', error);
       return { matchParams: 'Error', results: [] };
     }
-  }
-
-  private mockMarkets(matchData: MatchData): MarketData[] {
-    return [
-      {
-        name: 'Match Winner',
-        outcomes: [matchData.homeTeam, 'Draw', matchData.awayTeam],
-      },
-    ];
   }
 }
