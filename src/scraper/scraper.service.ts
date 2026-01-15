@@ -3,8 +3,16 @@ import { chromium, Browser, Page } from 'playwright';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { LlmService } from '../llm/llm.service';
-import { MatchData } from '../common/types';
+import { MatchData, MarketData } from '../common/types';
 import { EXTERNAL_URLS } from '../common/constants';
+
+export interface ScrapedMatch {
+  home: string;
+  away: string;
+  time: string;
+  source: string;
+  raw?: string;
+}
 
 @Injectable()
 export class ScraperService {
@@ -65,14 +73,13 @@ export class ScraperService {
         );
       }
 
-      // extract first few matches
+      // extract matches
       const matches = await page.evaluate(() => {
         const elements = document.querySelectorAll('.event__match');
         return Array.from(elements)
-          .slice(0, 5)
-          .map((el) => {
+          .slice(0, 15) // Process up to 15 matches instead of just 5
+          .map((el): ScrapedMatch | null => {
             try {
-              // Selectors identified by Browser Agent
               const homeEl =
                 el.querySelector('.event__participant--home') ||
                 el.querySelector('.event__homeParticipant');
@@ -88,86 +95,93 @@ export class ScraperService {
                 time:
                   timeEl?.textContent?.trim() ||
                   statusEl?.textContent?.trim() ||
-                  new Date().toISOString(),
+                  '',
                 source: 'flashscore',
-                raw: el.innerHTML.substring(0, 100), // Keep debug info
               };
             } catch {
-              return {
-                home: 'Error',
-                away: 'Error',
-                time: 'Error',
-                source: 'error',
-                raw: '',
-              };
+              return null;
             }
-          });
+          })
+          .filter((m) => m !== null);
       });
 
-      this.logger.log(`Found ${matches.length} matches:`);
-      this.logger.log(JSON.stringify(matches, null, 2));
-
-      if (matches.length === 0) {
-        this.logger.warn('No matches found to process.');
-        throw new Error('No matches found.');
-      }
-
-      // Select the first match for LLM testing (Production: Iterate all or queue them)
-      const matchToProcess: MatchData = {
-        homeTeam: matches[0].home || 'Unknown Home',
-        awayTeam: matches[0].away || 'Unknown Away',
-        startTime: matches[0].time || new Date().toISOString(),
-        source: 'flashscore-scraped',
-        sport: sport,
-      };
-
       this.logger.log(
-        `Testing LLM with Match: ${matchToProcess.homeTeam} vs ${matchToProcess.awayTeam}`,
+        `Found ${matches.length} matches for ${sport}. Processing...`,
       );
-      // Pass sport context to generating markets (TODO: Update LLM Service to use it if needed)
-      const aiMarkets = await this.llmService.generateMarkets(matchToProcess);
 
-      // --- PERSISTENCE LAYER ---
-      // composite ID: team vs team - date
-      const sanitize = (s: string) =>
-        s.replace(/[^a-z0-9]/gi, '').toLowerCase();
-      const parsedStartTime = this.parseTime(matchToProcess.startTime);
-      const eventId = `${sanitize(matchToProcess.homeTeam)}-vs-${sanitize(matchToProcess.awayTeam)}-${parsedStartTime.toISOString().split('T')[0]}`;
+      const processedResults = [];
 
-      const savedEvent = await this.prisma.event.upsert({
-        where: { externalId: eventId },
-        update: {
-          status: 'IN_PLAY', // Update status if re-scraped (simplified logic)
-          // We don't overwrite markets to avoid destroying existing state
-        },
-        create: {
-          externalId: eventId,
-          homeTeam: matchToProcess.homeTeam,
-          awayTeam: matchToProcess.awayTeam,
-          startTime: parsedStartTime,
-          projectedEnd: new Date(
-            parsedStartTime.getTime() + 2 * 60 * 60 * 1000,
-          ), // +2h
-          status: 'SCHEDULED',
+      for (const match of matches) {
+        if (!match) continue;
+
+        const matchToProcess: MatchData = {
+          homeTeam: match.home,
+          awayTeam: match.away,
+          startTime: match.time || new Date().toISOString(),
+          source: 'flashscore-scraped',
           sport: sport,
-          markets: {
-            create: aiMarkets.map((m) => ({
-              name: m.name,
-              status: 'OPEN',
-            })),
-          },
-        },
-        include: { markets: true },
-      });
+        };
 
-      this.logger.log(
-        `Saved Event [${savedEvent.id}] with ${savedEvent.markets.length} markets to DB.`,
-      );
+        const parsedStartTime = this.parseTime(matchToProcess.startTime);
+        const sanitize = (s: string) =>
+          s.replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+        // Use a more stable ID: team names only (for today) or team names + date
+        // To avoid drift, we truncate the date and DONT use the "2 hours ago" transient time in the key
+        const dateKey = parsedStartTime.toISOString().split('T')[0];
+        const eventId = `${sanitize(matchToProcess.homeTeam)}-vs-${sanitize(matchToProcess.awayTeam)}-${dateKey}`;
+
+        // Generate AI markets only if it's a new event or we really need them
+        // For production efficiency, skip LLM if event exists
+        const existingEvent = await this.prisma.event.findUnique({
+          where: { externalId: eventId },
+        });
+
+        let aiMarkets: MarketData[] = [];
+        if (!existingEvent) {
+          this.logger.log(
+            `New event found: ${matchToProcess.homeTeam} vs ${matchToProcess.awayTeam}. Generating markets...`,
+          );
+          aiMarkets = await this.llmService.generateMarkets(matchToProcess);
+        }
+
+        const savedEvent = await this.prisma.event.upsert({
+          where: { externalId: eventId },
+          update: {
+            // Only update status if it's currently SCHEDULED
+            status: matchToProcess.startTime.includes(':')
+              ? 'SCHEDULED'
+              : 'IN_PLAY',
+          },
+          create: {
+            externalId: eventId,
+            homeTeam: matchToProcess.homeTeam,
+            awayTeam: matchToProcess.awayTeam,
+            startTime: parsedStartTime,
+            projectedEnd: new Date(
+              parsedStartTime.getTime() + 2 * 60 * 60 * 1000,
+            ),
+            status: matchToProcess.startTime.includes(':')
+              ? 'SCHEDULED'
+              : 'IN_PLAY',
+            sport: sport,
+            markets: {
+              create: aiMarkets.map((m) => ({
+                name: m.name,
+                status: 'OPEN',
+              })),
+            },
+          },
+          include: { markets: true },
+        });
+
+        processedResults.push(savedEvent);
+      }
 
       return {
         scrapedMatches: matches,
-        llmResult: aiMarkets,
-        savedEvent,
+        count: processedResults.length,
+        sports: sport,
       };
     } catch (error) {
       this.logger.error('Inspection failed', error);
@@ -248,13 +262,14 @@ export class ScraperService {
     // reusing the inspection logic for MVP (getting top 5 matches)
     // in prod this would search specifically or go to the event link
     const inspection = await this.inspectFlashscoreSelectors();
+    const scrapedMatches = inspection.scrapedMatches;
 
-    const relevantMatch = inspection.scrapedMatches.find(
+    const relevantMatch = scrapedMatches.find(
       (m) =>
-        m.home.includes(homeTeam) ||
-        m.away.includes(awayTeam) || // Simplify matching for demo
-        homeTeam.includes(m.home) ||
-        awayTeam.includes(m.away),
+        m.home.toLowerCase().includes(homeTeam.toLowerCase()) ||
+        m.away.toLowerCase().includes(awayTeam.toLowerCase()) ||
+        homeTeam.toLowerCase().includes(m.home.toLowerCase()) ||
+        awayTeam.toLowerCase().includes(m.away.toLowerCase()),
     );
 
     if (relevantMatch) {
@@ -262,7 +277,7 @@ export class ScraperService {
         homeTeam: relevantMatch.home,
         awayTeam: relevantMatch.away,
         startTime: relevantMatch.time, // This might be "Finished" or "2-1"
-        source: `Flashscore Scraped: ${relevantMatch.raw}`,
+        source: `Flashscore Scraped: ${relevantMatch.home} ${relevantMatch.time} ${relevantMatch.away}`,
       };
     }
 
