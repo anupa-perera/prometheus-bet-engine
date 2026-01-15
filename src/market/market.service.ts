@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { EVENT_STATUS, MARKET_STATUS } from '../common/constants';
-import { ScraperService } from '../scraper/scraper.service';
+import { OracleService } from '../scraper/oracle.service';
 import { LlmService } from '../llm/llm.service';
 
 @Injectable()
@@ -11,7 +11,7 @@ export class MarketService {
 
   constructor(
     private prisma: PrismaService,
-    private scraperService: ScraperService,
+    private oracleService: OracleService,
     private llmService: LlmService,
   ) {}
 
@@ -73,17 +73,13 @@ export class MarketService {
       });
 
       for (const event of inPlayEvents) {
-        // Check if finished via Scraper
-        const resultMatch = await this.scraperService.findMatchResult(
+        // Check if finished via Consensus Oracle
+        const resultMatch = await this.oracleService.getConsensusResult(
           event.homeTeam,
           event.awayTeam,
         );
 
-        if (
-          resultMatch &&
-          (resultMatch.startTime.includes('Finished') ||
-            resultMatch.startTime.includes('After'))
-        ) {
+        if (resultMatch && resultMatch.status === 'FINISHED') {
           this.logger.log(
             `Event Finished! Resulting markets for: ${event.homeTeam} vs ${event.awayTeam}`,
           );
