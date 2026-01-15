@@ -1,7 +1,7 @@
 
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-  <h1 align="center">Betting Engine (Pool Based)</h1>
+  <h1 align="center"> Prometheus Bet Engine (Pool Based)</h1>
 </p>
 
 ## Description
