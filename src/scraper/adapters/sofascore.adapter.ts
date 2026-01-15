@@ -40,18 +40,39 @@ export class SofaScoreAdapter implements IDataSource {
         { waitUntil: 'networkidle' },
       );
 
-      // 3. Click first result
-      // Results usually in a list. Select first match link.
-      const firstResultSelector =
-        'div[data-testid="search-result-event"] a, a[href*="/match/"]';
-      const result = await page.$(firstResultSelector);
+      // 3. Find the correct result in the list
+      const results = await page.$$('div[data-testid="search-result-event"]');
+      let foundLink: string | null = null;
 
-      if (!result) {
-        this.logger.warn('[SofaScore] No results found');
+      const normalize = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const hReq = normalize(homeTeam);
+      const aReq = normalize(awayTeam);
+
+      for (const res of results) {
+        const text = (await res.innerText()).toLowerCase();
+        if (
+          (text.includes(hReq) || hReq.includes(normalize(text))) &&
+          (text.includes(aReq) || aReq.includes(normalize(text)))
+        ) {
+          const link = await res.$('a');
+          if (link) {
+            foundLink = await link.getAttribute('href');
+            break;
+          }
+        }
+      }
+
+      if (!foundLink) {
+        this.logger.warn(
+          `[SofaScore] No matching results found for ${homeTeam} vs ${awayTeam}`,
+        );
         return null;
       }
 
-      await result.click();
+      await page.goto(`https://www.sofascore.com${foundLink}`, {
+        waitUntil: 'domcontentloaded',
+      });
       await page.waitForLoadState('domcontentloaded');
 
       // 4. Extract Details using Inspection Selectors

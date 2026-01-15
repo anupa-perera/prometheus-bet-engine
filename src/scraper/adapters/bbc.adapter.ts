@@ -34,20 +34,32 @@ export class BBCAdapter implements IDataSource {
       // 2. Extract first result link that looks like a match report
       // Links usually contain /sport/football/
       // And headlines often match.
-      const matchLink = await page.evaluate<string | undefined>(() => {
-        // Explicitly cast the NodeList to unknown then to the specific array type we want
-        const elements = document.querySelectorAll(
-          'a[href*="/sport/football/"]',
-        );
-        const links: HTMLAnchorElement[] = [];
-        elements.forEach((el) => links.push(el as HTMLAnchorElement));
+      const matchLink = await page.evaluate(
+        ({ home, away }) => {
+          const elements = document.querySelectorAll(
+            'a[href*="/sport/football/"]',
+          );
+          const links: HTMLAnchorElement[] = [];
+          elements.forEach((el) => links.push(el as HTMLAnchorElement));
 
-        const found = links.find(
-          (l) =>
-            !l.href.includes('scores-fixtures') && !l.href.includes('tables'),
-        );
-        return found ? found.href : undefined;
-      });
+          const normalize = (s: string) =>
+            s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const hReq = normalize(home);
+          const aReq = normalize(away);
+
+          const found = links.find((l) => {
+            const text = l.innerText.toLowerCase();
+            const href = l.href.toLowerCase();
+            const isMatch =
+              (text.includes(hReq) || text.includes(aReq)) &&
+              !href.includes('scores-fixtures') &&
+              !href.includes('tables');
+            return isMatch;
+          });
+          return found ? found.href : undefined;
+        },
+        { home: homeTeam, away: awayTeam },
+      );
 
       if (!matchLink) {
         this.logger.warn('[BBC] No match report found in search');

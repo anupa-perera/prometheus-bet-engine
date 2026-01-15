@@ -36,12 +36,21 @@ export class LiveScoreAdapter implements IDataSource {
       // Look for a match link containing both team names approx
       // Selectors on livescores.com mirror:
       // Rows usually have links. We'll search for text.
-      const matchLink = await page.evaluate((away) => {
-        const links = Array.from(document.querySelectorAll('a'));
-        return links.find((l) =>
-          l.innerText.toLowerCase().includes(away.toLowerCase()),
-        )?.href;
-      }, awayTeam);
+      const matchLink = await page.evaluate(
+        ({ home, away }) => {
+          const links = Array.from(document.querySelectorAll('a'));
+          const normalize = (s: string) =>
+            s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const hReq = normalize(home);
+          const aReq = normalize(away);
+
+          return links.find((l) => {
+            const text = l.innerText.toLowerCase();
+            return text.includes(hReq) && text.includes(aReq);
+          })?.href;
+        },
+        { home: homeTeam, away: awayTeam },
+      );
 
       if (!matchLink) {
         this.logger.warn('[LiveScore] No match link found in search results');

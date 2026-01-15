@@ -26,22 +26,33 @@ export class ScraperService {
   // Helper to parse 'Today, 23:00' or dates
   private parseTime(timeStr: string): Date {
     const now = new Date();
-    // Simplified parsing logic for demo:
-    // If it says "Finished" or "After Pen", assume it started in the past (e.g. 2 hours ago)
+    // 1. Check for finished/live markers
     if (
       timeStr.includes('Finished') ||
       timeStr.includes('After') ||
-      timeStr.includes('Live')
+      timeStr.includes('Live') ||
+      timeStr.includes('FT') ||
+      timeStr.includes('Pen') ||
+      timeStr.includes('AET')
     ) {
       return new Date(now.getTime() - 2 * 60 * 60 * 1000);
     }
-    // If it has a time like "23:00", assume it's today
-    if (timeStr.includes(':')) {
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      const date = new Date();
-      date.setHours(hours, minutes, 0, 0);
-      return date;
+
+    // 2. Check for scores (e.g. "2 - 1") which implies it's in progress or finished
+    if (/\d+\s*[-:]\s*\d+/.test(timeStr)) {
+      return new Date(now.getTime() - 60 * 60 * 1000); // Assume it started 1h ago
     }
+
+    // 3. Time format "HH:mm"
+    if (timeStr.includes(':')) {
+      const parts = timeStr.split(':').map(Number);
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        const date = new Date();
+        date.setHours(parts[0], parts[1], 0, 0);
+        return date;
+      }
+    }
+
     return now;
   }
 

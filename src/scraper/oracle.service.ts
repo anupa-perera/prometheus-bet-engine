@@ -40,7 +40,21 @@ export class OracleService {
       }),
     );
 
-    const validResults = results.filter((r) => r !== null);
+    const validResults = results
+      .filter((r) => r !== null)
+      .filter((r) => {
+        // Strict Verification: Ensure the found match actually matches the requested teams
+        const isMatch =
+          this.verifyTeamName(homeTeam, r.homeTeam) &&
+          this.verifyTeamName(awayTeam, r.awayTeam);
+
+        if (!isMatch) {
+          this.logger.warn(
+            `[Oracle] Source returned mismatching results. Expected: ${homeTeam} vs ${awayTeam}, Found: ${r.homeTeam} vs ${r.awayTeam}`,
+          );
+        }
+        return isMatch;
+      });
 
     if (validResults.length === 0) {
       this.logger.warn('[Oracle] No data found from any source.');
@@ -99,5 +113,18 @@ export class OracleService {
 
     this.logger.warn('[Oracle] No consensus reached.');
     return null;
+  }
+
+  private verifyTeamName(requested: string, found: string): boolean {
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]/g, '')
+        .trim();
+    const r = normalize(requested);
+    const f = normalize(found);
+
+    // Allow fuzzy matching: "Real Madrid" matches "Real Madrid CF"
+    return f.includes(r) || r.includes(f);
   }
 }

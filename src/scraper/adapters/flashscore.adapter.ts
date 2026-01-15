@@ -48,9 +48,33 @@ export class FlashscoreAdapter implements IDataSource {
         timeout: 10000,
       });
 
-      // Click first match result
-      const matchSelector = '.searchResult';
-      await page.click(matchSelector);
+      // Click the first valid match result
+      const results = await page.$$('.searchResult');
+      let clicked = false;
+
+      const normalize = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const hReq = normalize(homeTeam);
+      const aReq = normalize(awayTeam);
+
+      for (const res of results) {
+        const text = (await res.innerText()).toLowerCase();
+        if (
+          (text.includes(hReq) || hReq.includes(normalize(text))) &&
+          (text.includes(aReq) || aReq.includes(normalize(text)))
+        ) {
+          await res.click();
+          clicked = true;
+          break;
+        }
+      }
+
+      if (!clicked) {
+        this.logger.warn(
+          `[Flashscore] No matching search results for ${homeTeam} vs ${awayTeam}`,
+        );
+        return null;
+      }
 
       // Switch to new tab if it opens one, or wait for navigation
       // Flashscore search usually opens in same modal or redirects?
