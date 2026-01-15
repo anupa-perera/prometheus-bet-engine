@@ -63,25 +63,38 @@ export class BBCAdapter implements IDataSource {
         score: string;
         status: string;
       } | null>(() => {
+        // BBC uses complex classes but also robust data-testids in the scoreboard
+        // Try stable data-testid based logic first if available in newer layouts
+
+        // Teams
+        // DesktopValue class seems relatively stable in the header
         const homeEl = document.querySelector(
-          'div[class*="HomeTeam"] span[class*="MobileValue"]',
+          '.ssrcss-dznsxc-StyledTeam-HomeTeam .ssrcss-1p14tic-DesktopValue, [data-testid="home-team-name"], .HomeTeam .DesktopValue',
         );
         const awayEl = document.querySelector(
-          'div[class*="AwayTeam"] span[class*="MobileValue"]',
-        );
-        const homeScore = document.querySelector('div[class*="HomeScore"]');
-        const awayScore = document.querySelector('div[class*="AwayScore"]');
-        const status = document.querySelector(
-          'div[class*="MatchProgressWrapper"], div[class*="StyledPeriod"]',
+          '.ssrcss-gddhb7-StyledTeam-AwayTeam .ssrcss-1p14tic-DesktopValue, [data-testid="away-team-name"], .AwayTeam .DesktopValue',
         );
 
-        if (!homeEl || !awayEl || !homeScore || !awayScore) return null;
+        // Scores
+        const homeScoreEl = document.querySelector(
+          '[data-testid="score"] .ssrcss-qsbptj-HomeScore, .HomeScore',
+        );
+        const awayScoreEl = document.querySelector(
+          '[data-testid="score"] .ssrcss-fri5a2-AwayScore, .AwayScore',
+        );
+
+        // Status
+        const statusEl = document.querySelector(
+          '.ssrcss-1u0dwdd-StyledPeriod, [class*="MatchProgressWrapper"], div[class*="StyledPeriod"]',
+        );
+
+        if (!homeEl || !awayEl || !homeScoreEl || !awayScoreEl) return null;
 
         return {
           home: homeEl.textContent?.trim(),
           away: awayEl.textContent?.trim(),
-          score: `${homeScore.textContent?.trim()}-${awayScore.textContent?.trim()}`,
-          status: status?.textContent?.trim() || 'Unknown',
+          score: `${homeScoreEl.textContent?.trim()}-${awayScoreEl.textContent?.trim()}`,
+          status: statusEl?.textContent?.trim() || 'Unknown',
         };
       });
 
