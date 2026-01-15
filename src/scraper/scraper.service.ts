@@ -177,7 +177,7 @@ export class ScraperService {
     }
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_MINUTE)
   async scrapeAllSports() {
     this.logger.log('Running Scheduled Ingestion for all sports...');
     // Full list of sports discovered from Flashscore menu
