@@ -23,6 +23,16 @@ export interface LlmResponse {
   markets: MarketData[];
 }
 
+export interface MarketResult {
+  marketName: string;
+  winningOutcome: string;
+}
+
+export interface SettlementResult {
+  matchParams: string; // e.g. "Nigeria 1 - 1 Morocco"
+  results: MarketResult[];
+}
+
 export interface OpenRouterResponse {
   choices: {
     message: {

@@ -5,6 +5,7 @@ import {
   MarketData,
   OpenRouterResponse,
   LlmResponse,
+  SettlementResult,
 } from '../common/types';
 import { EXTERNAL_URLS } from '../common/constants';
 
@@ -108,6 +109,80 @@ Example:
     } catch (error) {
       this.logger.error('Failed to generate markets via LLM', error);
       return [];
+    }
+  }
+
+  async settleMarkets(
+    matchData: MatchData,
+    marketNames: string[],
+  ): Promise<SettlementResult> {
+    this.logger.log(
+      `Settling markets for match: ${matchData.homeTeam} vs ${matchData.awayTeam} (${matchData.source})`,
+    );
+
+    const apiKey = this.configService.get<string>('OPENROUTER_API_KEY');
+    if (!apiKey) {
+      return { matchParams: 'Mock Settle', results: [] };
+    }
+
+    try {
+      const prompt = `
+        You are an expert betting judge (Oracle).
+        
+        Event: ${matchData.homeTeam} vs ${matchData.awayTeam}
+        Info: ${matchData.source || 'No details provided'}
+        Time: ${matchData.startTime}
+
+        We need to result the following POOL betting markets.
+        Markets to Settle:
+        ${JSON.stringify(marketNames)}
+
+        Task:
+        1. Analyze the "Info" string (which contains scraped score/status like "Nigeria 1-1 Morocco (Pen 4-5)").
+        2. Determine the WINNING OUTCOME for each market.
+        3. If you cannot determine the winner (e.g. data missing), use "VOID".
+
+        Format:
+        Return ONLY valid JSON:
+        {
+            "matchParams": "Final Score or Summary",
+            "results": [
+                { "marketName": "Match Winner", "winningOutcome": "Away Win" },
+                { "marketName": "Total Goals", "winningOutcome": "Under 2.5" }
+            ]
+        }
+      `;
+
+      const response = await fetch(EXTERNAL_URLS.OPENROUTER_API, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': EXTERNAL_URLS.APP_URL,
+          'X-Title': 'Betting Engine Oracle',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'xiaomi/mimo-v2-flash:free',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API Error: ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as OpenRouterResponse;
+      const cleanContent = data.choices?.[0]?.message?.content
+        ?.replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+
+      const parsed = JSON.parse(cleanContent || '{}') as SettlementResult;
+      return parsed;
+    } catch (error) {
+      this.logger.error('Failed to settle markets via LLM', error);
+      return { matchParams: 'Error', results: [] };
     }
   }
 

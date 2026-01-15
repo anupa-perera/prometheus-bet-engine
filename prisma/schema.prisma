@@ -30,6 +30,7 @@ model Market {
   eventId   String
   name      String       // e.g. "Match Winner", "Over/Under 2.5"
   status    String       @default("OPEN")
+  winningOutcome String? // The result of the market (e.g. "Home Win", "Over 2.5")
   event     Event        @relation(fields: [eventId], references: [id])
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt

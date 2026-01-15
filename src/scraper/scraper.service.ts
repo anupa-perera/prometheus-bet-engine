@@ -14,6 +14,28 @@ export class ScraperService {
     private llmService: LlmService,
   ) {}
 
+  // Helper to parse 'Today, 23:00' or dates
+  private parseTime(timeStr: string): Date {
+    const now = new Date();
+    // Simplified parsing logic for demo:
+    // If it says "Finished" or "After Pen", assume it started in the past (e.g. 2 hours ago)
+    if (
+      timeStr.includes('Finished') ||
+      timeStr.includes('After') ||
+      timeStr.includes('Live')
+    ) {
+      return new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    }
+    // If it has a time like "23:00", assume it's today
+    if (timeStr.includes(':')) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date;
+    }
+    return now;
+  }
+
   async inspectFlashscoreSelectors() {
     this.logger.log('Starting Flashscore Inspection...');
     let browser: Browser | null = null;
@@ -29,15 +51,12 @@ export class ScraperService {
 
       // Wait for the main event list
       try {
-        // Flashscore usually has a generic wrapper. Let's wait for ANY text to appear or specific known classes.
-        // Modern Flashscore uses classes like .event__match
         await page.waitForSelector('.event__match', { timeout: 10000 });
         this.logger.log('Found .event__match elements!');
       } catch {
         this.logger.warn(
           'Could not find .event__match, dumping body to check structure...',
         );
-        // If we fail, let's just grab the page title and maybe some body text to see what loaded
       }
 
       // extract first few matches
@@ -103,9 +122,39 @@ export class ScraperService {
       );
       const aiMarkets = await this.llmService.generateMarkets(matchToProcess);
 
+      // --- PERSISTENCE LAYER ---
+      // We must save this to DB so the Scheduler can act on it
+      const eventId = `test-${Date.now()}`; // fast unique ID for demo
+      const parsedStartTime = this.parseTime(matchToProcess.startTime);
+
+      const savedEvent = await this.prisma.event.create({
+        data: {
+          externalId: eventId,
+          homeTeam: matchToProcess.homeTeam,
+          awayTeam: matchToProcess.awayTeam,
+          startTime: parsedStartTime,
+          projectedEnd: new Date(
+            parsedStartTime.getTime() + 2 * 60 * 60 * 1000,
+          ), // +2h
+          status: 'SCHEDULED', // Force SCHEDULED so we can test Locking logic
+          markets: {
+            create: aiMarkets.map((m) => ({
+              name: m.name,
+              status: 'OPEN',
+            })),
+          },
+        },
+        include: { markets: true },
+      });
+
+      this.logger.log(
+        `Saved Event [${savedEvent.id}] with ${savedEvent.markets.length} markets to DB.`,
+      );
+
       return {
         scrapedMatches: matches,
         llmResult: aiMarkets,
+        savedEvent,
       };
     } catch (error) {
       this.logger.error('Inspection failed', error);
@@ -113,5 +162,35 @@ export class ScraperService {
     } finally {
       if (browser) await browser.close();
     }
+  }
+
+  async findMatchResult(
+    homeTeam: string,
+    awayTeam: string,
+  ): Promise<MatchData | null> {
+    this.logger.log(`Searching for result: ${homeTeam} vs ${awayTeam}`);
+
+    // reusing the inspection logic for MVP (getting top 5 matches)
+    // in prod this would search specifically or go to the event link
+    const inspection = await this.inspectFlashscoreSelectors();
+
+    const relevantMatch = inspection.scrapedMatches.find(
+      (m) =>
+        m.home.includes(homeTeam) ||
+        m.away.includes(awayTeam) || // Simplify matching for demo
+        homeTeam.includes(m.home) ||
+        awayTeam.includes(m.away),
+    );
+
+    if (relevantMatch) {
+      return {
+        homeTeam: relevantMatch.home,
+        awayTeam: relevantMatch.away,
+        startTime: relevantMatch.time, // This might be "Finished" or "2-1"
+        source: `Flashscore Scraped: ${relevantMatch.raw}`,
+      };
+    }
+
+    return null;
   }
 }
