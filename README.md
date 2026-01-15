@@ -58,7 +58,20 @@ graph TD
 ### 1. Scraper Module (`src/scraper`)
 Responsible for discovering events and acquiring data.
 *   **Ingestion**: Iterates through multiple sports (Football, Tennis, Basketball, Cricket, Rugby, Volleyball) on Flashscore to find scheduled matches.
-*   **Oracle Service**: The "Truth Verification" layer. When a match ends, it polls 4 independent adapters (`Flashscore`, `SofaScore`, `LiveScore`, `BBC`) to reach a consensus on the final score, preventing single-source-of-failure or manipulation.
+*   **Oracle Service**: The "Truth Verification" layer.
+
+#### Consensus Oracle Mechanism
+To ensure trustless resolution, the system queries **4 independent data sources** when a match concludes:
+1.  **Flashscore**
+2.  **SofaScore**
+3.  **LiveScore**
+4.  **BBC Sport** (News Fallback)
+
+**Algorithm**:
+1.  **Parallel Polling**: All adapters are queried simultaneously for the match result.
+2.  **Normalization**: Scores are extracted and normalized (e.g., "2-1").
+3.  **Majority Vote**: The system counts occurrences of each score. The result with the most votes is accepted as the **Consensus Truth**.
+4.  **Settlement**: This consensus result is passed to the LLM to settle all associated betting markets.
 
 ### 2. Market Module (`src/market`)
 Manages the state machine of every event.
