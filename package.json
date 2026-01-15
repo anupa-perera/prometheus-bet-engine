@@ -28,6 +28,8 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^6.1.0",
     "@prisma/client": "^5.10.2",
+    "@types/bcrypt": "^6.0.0",
+    "bcrypt": "^6.0.0",
     "playwright": "^1.57.0",
     "prisma": "^5.10.2",
     "reflect-metadata": "^0.2.2",

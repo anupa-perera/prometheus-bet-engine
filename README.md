@@ -1,99 +1,132 @@
 
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-  <h1 align="center">Betting Engine (Pool Based)</h1>
+  <img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" />
+  <h1 align="center">Prometheus Betting Engine</h1>
+  <p align="center">A decentralized, autonomous, pool-based betting system powered by AI and Consensus Oracles.</p>
 </p>
 
-## Description
+## Overview
 
-A modular, event-driven betting engine architecture designed for transparency and automation. It features:
-1.  **Multi-Sport Data Ingestion**: Dynamic scraping of real-time sports data (Flashscore) for Football, Tennis, Basketball, and more using Playwright.
-2.  **AI-Powered Market Maker**: Uses Large Language Models (OpenRouter) to identify sport contexts and generate relevant, open-ended pool markets (e.g., "Set Winner" for Tennis).
-3.  **Automated Lifecycle**: 
-    *   **Locking**: Automatically locks markets when the event starts (driven by Cron jobs).
-    *   **Resulting (Oracle)**: Monitors live scores and asks the AI to settle markets (Win/Loss/Void) once the match finishes.
-4.  **Consensus Oracle Pattern**: (In Progress) Verification across multiple independent sources to ensure trustless resolution.
+The Prometheus Betting Engine is a modular, event-driven platform that automates the entire lifecycle of a sports betting market. Unlike traditional bookmakers that rely on manual odds setting and resulting, Prometheus uses:
 
-## Architecture
+1.  **AI Agents (LLMs)** to generate dynamic, sport-specific markets (e.g., "Will Real Madrid win by more than 2 goals?").
+2.  **Consensus Oracles** to verify real-world outcomes by cross-referencing multiple independent data sources.
+3.  **Pool-Based Betting** to ensure transparent payouts where winners share the total stake pool.
 
-*   **Backend**: NestJS (Monorepo)
-*   **Database**: SQLite (Dev) / PostgreSQL (Prod) via Prisma ORM
-*   **Scraping**: Playwright & Puppeteer
-*   **AI**: OpenRouter (Unified API for GPT-4o, Claude, Llama 3)
-*   **Job Scheduling**: @nestjs/schedule (Cron Jobs)
+## System Architecture
 
-## Modules
+The system is built on **NestJS** using a modular Monorepo architecture. It leverages **Prisma** for data persistence and **Playwright** for real-time data acquisition.
 
-*   `ScraperModule`: Handles multi-sport scraping and creates `Event` records.
-*   `LlmModule`: The "Brain" – Generates markets and acts as the Judge/Oracle for results.
-*   `MarketModule`: The "Clock" – Manages the state of events (`SCHEDULED` -> `IN_PLAY` -> `FINISHED`) and Markets (`OPEN` -> `LOCKED` -> `RESULTED`).
+```mermaid
+graph TD
+    User[User Client] -->|Place Bet| BettingService
+    User -->|Deposit/Withdraw| WalletService
+    
+    subgraph "Core Engine"
+        MarketModule -->|Manages| MarketLifecycle[Lifecycle (Open/Lock/Result)]
+        BettingModule -->|Calculates| Payouts[Pool Settlement]
+        UserModule -->|Auth| Identity[User Identity]
+    end
 
-## Project Setup
+    subgraph "Intelligence Layer"
+        ScraperModule -->|Ingests| LiveData[Live Scores]
+        OracleService -->|Verifies| Consensus[Consensus Result]
+        LlmService -->|Generates| Markets[Market Definitions]
+        LlmService -->|Judges| Settlement[Outcome Decision]
+    end
 
-```bash
-# Install dependencies
-$ npm install
+    subgraph "Data Sources"
+        Flashscore
+        SofaScore
+        LiveScore
+        BBC_Sport
+    end
 
-# Initialize Database (SQLite)
-$ npx prisma generate
-$ npx prisma db push
+    ScraperModule -- Scrapes --> Flashscore
+    OracleService -- Polls --> Flashscore
+    OracleService -- Polls --> SofaScore
+    OracleService -- Polls --> LiveScore
+    OracleService -- Polls --> BBC_Sport
+    
+    MarketLifecycle -- Triggers --> OracleService
+    OracleService -- Feeds --> LlmService
+    LlmService -- Settle Command --> BettingModule
 ```
 
-**Environment Variables**:
-Ensure you have a `.env` file with:
-```env
-DATABASE_URL="file:./dev.db"
-OPENROUTER_API_KEY="sk-..."
-```
+## Core Modules
 
-## Running the App
+### 1. Scraper Module (`src/scraper`)
+Responsible for discovering events and acquiring data.
+*   **Ingestion**: Iterates through multiple sports (Football, Tennis, Basketball, Cricket, Rugby, Volleyball) on Flashscore to find scheduled matches.
+*   **Oracle Service**: The "Truth Verification" layer. When a match ends, it polls 4 independent adapters (`Flashscore`, `SofaScore`, `LiveScore`, `BBC`) to reach a consensus on the final score, preventing single-source-of-failure or manipulation.
 
-```bash
-# development
-$ npm run start
+### 2. Market Module (`src/market`)
+Manages the state machine of every event.
+*   **Cron Jobs**: Runs every minute to check for events that have started (`OPEN` -> `LOCKED`) or finished.
+*   **Lifecycle**:
+    *   **Scheduled**: Event created, Markets generated by AI.
+    *   **In-Play**: Markets locked, betting closed.
+    *   **Finished**: Oracle verifies score -> LLM determines winning outcome -> Bets settled.
 
-# watch mode
-$ npm run start:dev
-```
+### 3. LLM Module (`src/llm`)
+The "Brain" of the operation.
+*   **Market Generation**: Analyzes team names and sport context to create engaging, human-readable markets.
+*   **Result Judgment**: Takes the raw score (e.g., "2-1") and the market name (e.g., "Home Team to win?") to deterministically decide the winner.
 
-## How to Verify (Local Implementation)
+### 4. Betting & Wallet Module (`src/betting`, `src/wallet`)
+Handles the financial logic.
+*   **Wallet**: Simple ledger system for user balances.
+*   **Pool Logic**: Implements a Pari-Mutuel style payout.
+    *   `WinnerPayout = Stake + (Stake / TotalWinnerPool) * TotalLoserPool`
 
-1.  **Start the Server**: `npm run start`
-2.  **Trigger Ingestion**:
-    *   Use the API to scrape live data.
-    *   **Single Sport**: `GET /scraper/test?sport=tennis` (or football, basketball, etc.)
-    *   **All Sports**: `GET /scraper/test-all` (Iterates through top 6 sports)
-3.  **Check Logs**:
-    *   Watch for "Found X matches", "Generating markets...", "Saved Event...".
-    *   Wait 1 minute for the **Scheduler**.
-    *   **Locking**: If `startTime` < Now, logs will show "Locked markets for Event...".
-    *   **Resulting**: If match status is "Finished", logs will show "Oracle decision..." and "Markets Resulted Successfully".
+## Installation & Setup
 
-## Features Implemented
+### Prerequisites
+*   Node.js v16+
+*   NPM or Yarn
+*   OpenRouter API Key (for LLM services)
 
-*   [x] **Multi-Sport Scraper**: Robust parsing of Flashscore for various sports.
-*   [x] **AI Market Generation**: Dynamic market creation + sport detection.
-*   [x] **Market Lifecycle**: Automated Locking (Cron).
-*   [x] **AI Oracle**: Automated Resulting/Settlement of markets based on final scores.
-*   [x] **Type Safety**: Strict TypeScript + ESLint + Prettier workflow.
+### Steps
 
-## Roadmap (Upcoming)
+1.  **Install Dependencies**
+    ```bash
+    npm install
+    npx playwright install chromium
+    ```
 
-*   [ ] **Phase 5: Betting & Wallet**
-    *   User Authentication (JWT).
-    *   Wallet Management (Deposit/Withdraw keys).
-    *   Bet Placement Logic (Pool calculations).
-*   [ ] **Phase 6: Frontend Client**
-    *   Next.js Dashboard for users to view odds and place bets.
-*   [ ] **Phase 7: Advanced Oracle**
-    *   Multi-source verification (BBC, ESPN) to cross-check results before paying out.
+2.  **Environment Configuration**
+    Create a `.env` file in the root directory:
+    ```env
+    DATABASE_URL="file:./dev.db"
+    OPENROUTER_API_KEY="your_api_key_here"
+    ```
 
-## API Endpoints
+3.  **Database Initialization**
+    ```bash
+    npx prisma migrate dev
+    npx prisma generate
+    ```
 
-*   `GET /scraper/ingest`: Scrape default sport (Football).
-*   `GET /scraper/ingest?sport=[name]`: Scrape specific sport (e.g. `tennis`, `cricket`).
-*   `GET /scraper/ingest-all`: Scrape all configured sports.
+4.  **Run the Application**
+    ```bash
+    npm run start
+    ```
 
-## License
+## API Usage
 
-Attributes to NestJS (MIT).
+### Scraper/Oracle Testing
+*   **Ingest All Sports**: `GET /scraper/ingest-all`
+*   **Test Oracle Consensus**: `GET /scraper/test-oracle?home=TeamA&away=TeamB`
+
+### User Operations
+*   **Register**: `POST /user/register` `{ "username": "...", "email": "...", "password": "..." }`
+*   **Deposit**: `POST /wallet/deposit` `{ "userId": "...", "amount": 100 }`
+*   **Place Bet**: `POST /betting/place` `{ "userId": "...", "marketId": "...", "outcome": "...", "stake": 10 }`
+
+## Technologies Used
+
+*   **Framework**: NestJS
+*   **Language**: TypeScript
+*   **Database**: SQLite (via Prisma)
+*   **Browser Automation**: Playwright
+*   **AI**: OpenRouter (Unified Interface for LLMs)

@@ -7,6 +7,9 @@ import { PrismaService } from './prisma.service';
 import { LlmModule } from './llm/llm.module';
 import { MarketModule } from './market/market.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { UserModule } from './user/user.module';
+import { WalletModule } from './wallet/wallet.module';
+import { BettingModule } from './betting/betting.module';
 
 @Module({
   imports: [
@@ -14,6 +17,9 @@ import { ScheduleModule } from '@nestjs/schedule';
     ScraperModule,
     LlmModule,
     MarketModule,
+    UserModule,
+    WalletModule,
+    BettingModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],

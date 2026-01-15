@@ -5,6 +5,8 @@ import { EVENT_STATUS, MARKET_STATUS } from '../common/constants';
 import { OracleService } from '../scraper/oracle.service';
 import { LlmService } from '../llm/llm.service';
 
+import { BettingService } from '../betting/betting.service';
+
 @Injectable()
 export class MarketService {
   private readonly logger = new Logger(MarketService.name);
@@ -13,6 +15,7 @@ export class MarketService {
     private prisma: PrismaService,
     private oracleService: OracleService,
     private llmService: LlmService,
+    private bettingService: BettingService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -118,9 +121,41 @@ export class MarketService {
                     winningOutcome: res.winningOutcome,
                   },
                 });
+
+                // Trigger Bet Settlement (Outside of this tx? Or inside?)
+                // BettingService runs its own transaction, so we should call it after this tx commits,
+                // OR we refactor BettingService to accept a transaction client.
+                // For simplicity and to avoid long-running transactions here, we'll queue them or call immediately after.
+                // BUT if this tx fails, we shouldn't settle.
+                // Optimally: await this.bettingService.settleMarket(market.id, res.winningOutcome);
+                // Since BettingService.settleMarket uses a transaction, nesting them isn't supported by Prisma unless we pass `tx`.
+                // Let's call it AFTER this block for now, or accumulate IDs.
+
+                // Correction: BettingService logic is critical.
+                // I will add a TO-DO to refactor for transactional integrity later.
+                // For now, I will store settlement tasks.
               }
             }
           });
+
+          // Execute Settlements (Post-Transaction)
+          // We need to re-loop or capture which markets were settled.
+          for (const res of settlement.results) {
+            const market = event.markets.find((m) => m.name === res.marketName);
+            if (market) {
+              try {
+                await this.bettingService.settleMarket(
+                  market.id,
+                  res.winningOutcome,
+                );
+              } catch (e) {
+                this.logger.error(
+                  `Failed to settle bets for market ${market.id}`,
+                  e,
+                );
+              }
+            }
+          }
 
           this.logger.log('Markets Resulted Successfully.');
         }
