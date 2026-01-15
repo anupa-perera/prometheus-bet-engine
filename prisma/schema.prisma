@@ -1,0 +1,40 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id             String   @id @default(uuid())
+  externalId     String   @unique // ID from the standardized source (or combined ID)
+  homeTeam       String
+  awayTeam       String
+  league         String?
+  source         String   @default("flashscore")
+  startTime      DateTime
+  projectedEnd   DateTime
+  status         String      @default("SCHEDULED")
+  markets        Market[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Market {
+  id        String       @id @default(uuid())
+  eventId   String
+  name      String       // e.g. "Match Winner", "Over/Under 2.5"
+  status    String       @default("OPEN")
+  event     Event        @relation(fields: [eventId], references: [id])
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// Enum definitions removed for SQLite compatibility
+// enum EventStatus { ... }
+// enum MarketStatus { ... }
