@@ -23,16 +23,16 @@ graph TD
     User -->|Deposit/Withdraw| WalletService
     
     subgraph "Core Engine"
-        MarketModule -->|Manages| MarketLifecycle[Lifecycle (Open/Lock/Result)]
-        BettingModule -->|Calculates| Payouts[Pool Settlement]
-        UserModule -->|Auth| Identity[User Identity]
+        MarketModule -->|Manages| MarketLifecycle["Lifecycle (Open/Lock/Result)"]
+        BettingModule -->|Calculates| Payouts["Pool Settlement"]
+        UserModule -->|Auth| Identity["User Identity"]
     end
 
     subgraph "Intelligence Layer"
-        ScraperModule -->|Ingests| LiveData[Live Scores]
-        OracleService -->|Verifies| Consensus[Consensus Result]
-        LlmService -->|Generates| Markets[Market Definitions]
-        LlmService -->|Judges| Settlement[Outcome Decision]
+        ScraperModule -->|Ingests| LiveData["Live Scores"]
+        OracleService -->|Verifies| Consensus["Consensus Result"]
+        LlmService -->|Generates| Markets["Market Definitions"]
+        LlmService -->|Judges| Settlement["Outcome Decision"]
     end
 
     subgraph "Data Sources"
