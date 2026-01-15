@@ -7,6 +7,7 @@ export interface MatchData {
   externalId?: string;
   projectedEnd?: string;
   sport?: string;
+  status?: string;
 }
 
 export interface MarketOutcome {
