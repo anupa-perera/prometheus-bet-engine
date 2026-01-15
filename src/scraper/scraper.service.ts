@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { chromium, Browser, Page } from 'playwright';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { MatchData } from '../common/types';
@@ -176,7 +177,9 @@ export class ScraperService {
     }
   }
 
+  @Cron(CronExpression.EVERY_HOUR)
   async scrapeAllSports() {
+    this.logger.log('Running Scheduled Ingestion for all sports...');
     // Full list of sports discovered from Flashscore menu
     const sports = [
       'football',
