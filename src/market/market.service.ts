@@ -164,4 +164,26 @@ export class MarketService {
       this.logger.error('Error in Resulting Scheduler', error);
     }
   }
+  async getUpcomingEvents(sport?: string) {
+    return this.prisma.event.findMany({
+      where: {
+        status: { in: [EVENT_STATUS.SCHEDULED, EVENT_STATUS.IN_PLAY] },
+        sport: sport === 'all' ? undefined : sport,
+      },
+      include: { markets: true },
+      orderBy: { startTime: 'asc' },
+    });
+  }
+
+  async getFinishedEvents(sport?: string) {
+    return this.prisma.event.findMany({
+      where: {
+        status: EVENT_STATUS.FINISHED,
+        sport: sport === 'all' ? undefined : sport,
+      },
+      include: { markets: true },
+      orderBy: { startTime: 'desc' },
+      take: 50,
+    });
+  }
 }

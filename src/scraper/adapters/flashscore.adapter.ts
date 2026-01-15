@@ -28,21 +28,28 @@ export class FlashscoreAdapter implements IDataSource {
         waitUntil: 'domcontentloaded',
       });
 
-      // Click search (verified selector from earlier sessions)
-      const searchButton = '.header__buttonIcon--search';
-      await page.click(searchButton);
+      // Click search (verified selector)
+      const searchButton = '#search-window';
+      // Fallback if ID changes, try class
+      const searchButtonFallback = '.searchIcon';
 
-      // Type query
-      await page.fill('input[type="text"]', `${homeTeam} ${awayTeam}`);
+      try {
+        await page.click(searchButton);
+      } catch {
+        await page.click(searchButtonFallback);
+      }
+
+      // Type query into the correct input
+      await page.fill('.searchInput__input', `${homeTeam} ${awayTeam}`);
       await page.keyboard.press('Enter');
 
       // Wait for results
-      await page.waitForSelector('.searchResult__participantName', {
+      await page.waitForSelector('.searchResult', {
         timeout: 10000,
       });
 
       // Click first match result
-      const matchSelector = '.searchResult__result';
+      const matchSelector = '.searchResult';
       await page.click(matchSelector);
 
       // Switch to new tab if it opens one, or wait for navigation
@@ -59,13 +66,15 @@ export class FlashscoreAdapter implements IDataSource {
         status: string;
       } | null>(() => {
         const homeEl = document.querySelector(
-          '.participant__participantName--home',
+          '.duelParticipant__home .participant__participantName',
         );
         const awayEl = document.querySelector(
-          '.participant__participantName--away',
+          '.duelParticipant__away .participant__participantName',
         );
         const scoreEl = document.querySelector('.detailScore__wrapper');
-        const statusEl = document.querySelector('.fixedHeaderDetail__status');
+        const statusEl = document.querySelector(
+          '.fixedHeaderDetail__status, .detailScore__status',
+        ); // Added fallback
 
         if (!homeEl || !awayEl || !scoreEl) return null;
 
