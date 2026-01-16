@@ -33,6 +33,41 @@ export class ScraperService implements OnModuleInit {
     }, 10000);
   }
 
+  // Helper to determine status from time string
+  private determineStatus(
+    timeStr: string,
+  ): 'SCHEDULED' | 'IN_PLAY' | 'FINISHED' {
+    const t = timeStr.trim();
+
+    // 1. Finished / Cancelled / Postponed
+    if (
+      t.includes('Finished') ||
+      t.includes('FT') ||
+      t.includes('After') ||
+      t.includes('Pen') ||
+      t.includes('AET') ||
+      t.includes('Postp') ||
+      t.includes('Canceled') ||
+      t.includes('Advancing') ||
+      t.includes('Abn') // Abandoned
+    ) {
+      return 'FINISHED';
+    }
+
+    // 2. Scheduled (HH:mm)
+    // Sometimes it might be "Today, 14:00" or just "14:00"
+    // Flashscore listing usually is just HH:mm for today, or DD.MM. HH:mm for future.
+    if (t.includes(':') && !t.includes('-')) {
+      // A score like "2-1" might not have a colon if formatted "2:1" but check usually distinguishes
+      // "14:00" -> valid time
+      // "2-1" -> score
+      return 'SCHEDULED';
+    }
+
+    // 3. Otherwise assume IN_PLAY (Live, "34'", "2-1", "Half Time")
+    return 'IN_PLAY';
+  }
+
   // Helper to parse 'Today, 23:00' or dates
   private parseTime(timeStr: string): Date {
     const now = new Date();
@@ -48,19 +83,21 @@ export class ScraperService implements OnModuleInit {
       return new Date(now.getTime() - 2 * 60 * 60 * 1000);
     }
 
-    // 2. Check for scores (e.g. "2 - 1") which implies it's in progress or finished
-    if (/\d+\s*[-:]\s*\d+/.test(timeStr)) {
-      return new Date(now.getTime() - 60 * 60 * 1000); // Assume it started 1h ago
-    }
-
-    // 3. Time format "HH:mm"
-    if (timeStr.includes(':')) {
+    // 2. Time format "HH:mm" - CHECK THIS BEFORE SCORE
+    // Only match if it looks like time, not score (no dash)
+    if (timeStr.includes(':') && !timeStr.includes('-')) {
       const parts = timeStr.split(':').map(Number);
       if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
         const date = new Date();
         date.setHours(parts[0], parts[1], 0, 0);
         return date;
       }
+    }
+
+    // 3. Check for scores (e.g. "2 - 1") by looking for DASH
+    // We removed colon from regex to avoid matching "14:00"
+    if (/\d+\s*-\s*\d+/.test(timeStr)) {
+      return new Date(now.getTime() - 60 * 60 * 1000); // Assume it started 1h ago
     }
 
     return now;
@@ -119,7 +156,7 @@ export class ScraperService implements OnModuleInit {
       const matches = await page.evaluate(() => {
         const elements = document.querySelectorAll('.event__match');
         return Array.from(elements)
-          .slice(0, 15) // Process up to 15 matches
+          .slice(0, 50) // Process up to 50 matches (Increased from 15)
           .map((el): ScrapedMatch | null => {
             try {
               const homeEl =
@@ -156,6 +193,8 @@ export class ScraperService implements OnModuleInit {
       for (const match of matches) {
         if (!match) continue;
 
+        const correctStatus = this.determineStatus(match.time);
+
         const matchToProcess: MatchData = {
           homeTeam: match.home,
           awayTeam: match.away,
@@ -186,9 +225,7 @@ export class ScraperService implements OnModuleInit {
         const savedEvent = await this.prisma.event.upsert({
           where: { externalId: eventId },
           update: {
-            status: matchToProcess.startTime.includes(':')
-              ? 'SCHEDULED'
-              : 'IN_PLAY',
+            status: correctStatus,
           },
           create: {
             externalId: eventId,
@@ -198,9 +235,7 @@ export class ScraperService implements OnModuleInit {
             projectedEnd: new Date(
               parsedStartTime.getTime() + 2 * 60 * 60 * 1000,
             ),
-            status: matchToProcess.startTime.includes(':')
-              ? 'SCHEDULED'
-              : 'IN_PLAY',
+            status: correctStatus,
             sport: sport,
             markets: {
               create: aiMarkets.map((m) => ({
