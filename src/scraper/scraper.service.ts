@@ -56,12 +56,33 @@ export class ScraperService {
     return now;
   }
 
-  async inspectFlashscoreSelectors(sport: string = 'football') {
+  private isScraping = false;
+
+  async inspectFlashscoreSelectors(
+    sport: string = 'football',
+    browserInstance?: Browser,
+  ) {
     this.logger.log(`Starting Flashscore Inspection for sport: ${sport}...`);
     let browser: Browser | null = null;
+    let page: Page | null = null;
+
     try {
-      browser = await chromium.launch({ headless: true });
-      const page: Page = await browser.newPage();
+      // Reuse provided browser or launch new one with optimized args
+      if (browserInstance) {
+        browser = browserInstance;
+      } else {
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage', // crucial for docker memory limits
+            '--disable-gpu',
+          ],
+        });
+      }
+
+      page = await browser.newPage();
 
       const url =
         sport === 'football'
@@ -88,7 +109,7 @@ export class ScraperService {
       const matches = await page.evaluate(() => {
         const elements = document.querySelectorAll('.event__match');
         return Array.from(elements)
-          .slice(0, 15) // Process up to 15 matches instead of just 5
+          .slice(0, 15) // Process up to 15 matches
           .map((el): ScrapedMatch | null => {
             try {
               const homeEl =
@@ -137,13 +158,9 @@ export class ScraperService {
         const sanitize = (s: string) =>
           s.replace(/[^a-z0-9]/gi, '').toLowerCase();
 
-        // Use a more stable ID: team names only (for today) or team names + date
-        // To avoid drift, we truncate the date and DONT use the "2 hours ago" transient time in the key
         const dateKey = parsedStartTime.toISOString().split('T')[0];
         const eventId = `${sanitize(matchToProcess.homeTeam)}-vs-${sanitize(matchToProcess.awayTeam)}-${dateKey}`;
 
-        // Generate AI markets only if it's a new event or we really need them
-        // For production efficiency, skip LLM if event exists
         const existingEvent = await this.prisma.event.findUnique({
           where: { externalId: eventId },
         });
@@ -159,7 +176,6 @@ export class ScraperService {
         const savedEvent = await this.prisma.event.upsert({
           where: { externalId: eventId },
           update: {
-            // Only update status if it's currently SCHEDULED
             status: matchToProcess.startTime.includes(':')
               ? 'SCHEDULED'
               : 'IN_PLAY',
@@ -189,78 +205,82 @@ export class ScraperService {
         processedResults.push(savedEvent);
       }
 
+      await page.close();
+
       return {
         scrapedMatches: matches,
         count: processedResults.length,
         sports: sport,
       };
     } catch (error) {
+      if (page) await page.close();
+      // Only close browser if we created it locally
+      if (!browserInstance && browser) await browser.close();
+
       this.logger.error('Inspection failed', error);
       throw error;
-    } finally {
-      if (browser) await browser.close();
     }
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_30_MINUTES)
   async scrapeAllSports() {
+    if (this.isScraping) {
+      this.logger.warn('Scraping already in progress, skipping this run.');
+      return;
+    }
+
+    this.isScraping = true;
     this.logger.log('Running Scheduled Ingestion for all sports...');
-    // Full list of sports discovered from Flashscore menu
+
     const sports = [
       'football',
       'tennis',
       'basketball',
-      'hockey',
-      'cricket',
-      'baseball',
-      'rugby-union',
-      'american-football',
-      'aussie-rules',
-      'badminton',
-      'bandy',
-      'beach-soccer',
-      'beach-volleyball',
-      'boxing',
-      'cycling',
-      'darts',
-      'esports',
-      'field-hockey',
-      'floorball',
-      'futsal',
-      'golf',
-      'handball',
-      'horse-racing',
-      'kabaddi',
-      'mma',
-      'motorsport',
-      'netball',
-      'pesapallo',
-      'rugby-league',
-      'snooker',
-      'table-tennis',
-      'volleyball',
-      'water-polo',
-      'winter-sports',
+      // 'hockey', 'cricket', 'baseball', 'rugby-union', // Commented out to reduce load for MVP
+      // 'american-football', 'boxing', 'mma', 'motorsport' // Add back as needed
     ];
 
+    let browser: Browser | null = null;
     const results = [];
 
-    for (const sport of sports) {
-      try {
-        this.logger.log(`Starting scrape for sport: ${sport}`);
-        const result = await this.inspectFlashscoreSelectors(sport);
-        results.push({
-          sport,
-          success: true,
-          count: result.scrapedMatches.length,
-        });
-      } catch (error) {
-        this.logger.error(`Failed to scrape sport: ${sport}`, error);
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        results.push({ sport, success: false, error: errorMessage });
+    try {
+      // Launch shared browser instance
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
+      });
+
+      for (const sport of sports) {
+        try {
+          this.logger.log(`Starting scrape for sport: ${sport}`);
+          // Reuse the single browser instance
+          const result = await this.inspectFlashscoreSelectors(sport, browser);
+          results.push({
+            sport,
+            success: true,
+            count: result.scrapedMatches.length,
+          });
+          // Small delay to let system breathe
+          await new Promise((r) => setTimeout(r, 2000));
+        } catch (error) {
+          this.logger.error(`Failed to scrape sport: ${sport}`, error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          results.push({ sport, success: false, error: errorMessage });
+        }
       }
+    } catch (e) {
+      this.logger.error('Critical scraper error', e);
+    } finally {
+      if (browser) await browser.close();
+      this.isScraping = false;
     }
+
     return results;
   }
 
