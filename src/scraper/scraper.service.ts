@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { chromium, Browser, Page } from 'playwright';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
@@ -15,13 +15,23 @@ export interface ScrapedMatch {
 }
 
 @Injectable()
-export class ScraperService {
+export class ScraperService implements OnModuleInit {
   private readonly logger = new Logger(ScraperService.name);
 
   constructor(
     private prisma: PrismaService,
     private llmService: LlmService,
   ) {}
+
+  onModuleInit() {
+    this.logger.log(
+      'ScraperService initialized. Scheduling immediate scrape in 10s...',
+    );
+    // Delay slightly to allow server to fully start
+    setTimeout(() => {
+      void this.scrapeAllSports();
+    }, 10000);
+  }
 
   // Helper to parse 'Today, 23:00' or dates
   private parseTime(timeStr: string): Date {
@@ -205,20 +215,18 @@ export class ScraperService {
         processedResults.push(savedEvent);
       }
 
-      await page.close();
-
       return {
         scrapedMatches: matches,
         count: processedResults.length,
         sports: sport,
       };
     } catch (error) {
+      this.logger.error('Inspection failed', error);
+      throw error;
+    } finally {
       if (page) await page.close();
       // Only close browser if we created it locally
       if (!browserInstance && browser) await browser.close();
-
-      this.logger.error('Inspection failed', error);
-      throw error;
     }
   }
 

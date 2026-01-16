@@ -19,9 +19,15 @@ export class MarketService {
     private bettingService: BettingService,
   ) {}
 
+  private isLocking = false;
+  private isResulting = false;
+
   @Cron(CronExpression.EVERY_MINUTE)
   async checkAndLockMarkets() {
-    this.logger.log('Checking for markets to lock...');
+    if (this.isLocking) return;
+    this.isLocking = true;
+
+    // this.logger.log('Checking for markets to lock...'); // Reduce noise
     const now = new Date();
 
     try {
@@ -37,6 +43,7 @@ export class MarketService {
       });
 
       if (eventsToLock.length === 0) {
+        this.isLocking = false;
         return;
       }
 
@@ -62,11 +69,19 @@ export class MarketService {
       }
     } catch (error) {
       this.logger.error('Error in Market Locking Scheduler', error);
+    } finally {
+      this.isLocking = false;
     }
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async checkAndResultMarkets() {
+    if (this.isResulting) {
+      this.logger.warn('Resulting already in progress. Skipping...');
+      return;
+    }
+    this.isResulting = true;
+
     this.logger.log('Checking for markets to result...');
 
     // Browser instance for this batch
@@ -167,6 +182,7 @@ export class MarketService {
       this.logger.error('Error in Resulting Scheduler', error);
     } finally {
       if (browser) await browser.close();
+      this.isResulting = false;
     }
   }
   async getUpcomingEvents(sport?: string) {
