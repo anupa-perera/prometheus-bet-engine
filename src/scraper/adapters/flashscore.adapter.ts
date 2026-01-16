@@ -13,13 +13,26 @@ export class FlashscoreAdapter implements IDataSource {
     homeTeam: string,
     awayTeam: string,
     _date?: Date,
+    browserInstance?: Browser,
   ): Promise<MatchData | null> {
     this.logger.log(
       `[Flashscore] Searching for ${homeTeam} vs ${awayTeam} (Date: ${_date ? _date.toISOString() : 'Any'})...`,
     );
     let browser: Browser | null = null;
     try {
-      browser = await chromium.launch({ headless: true });
+      if (browserInstance) {
+        browser = browserInstance;
+      } else {
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+          ],
+        });
+      }
       const page = await browser.newPage();
 
       // Use the generic search flow
@@ -130,7 +143,7 @@ export class FlashscoreAdapter implements IDataSource {
       this.logger.error('[Flashscore] Scrape failed', error);
       return null;
     } finally {
-      if (browser) await browser.close();
+      if (!browserInstance && browser) await browser.close();
     }
   }
 }

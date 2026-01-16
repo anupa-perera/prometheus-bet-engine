@@ -12,13 +12,26 @@ export class LiveScoreAdapter implements IDataSource {
     homeTeam: string,
     awayTeam: string,
     _date?: Date,
+    browserInstance?: Browser,
   ): Promise<MatchData | null> {
     this.logger.log(
       `[LiveScore] Searching for ${homeTeam} vs ${awayTeam} (Date: ${_date ? _date.toISOString() : 'Any'})...`,
     );
     let browser: Browser | null = null;
     try {
-      browser = await chromium.launch({ headless: true });
+      if (browserInstance) {
+        browser = browserInstance;
+      } else {
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+          ],
+        });
+      }
       const page = await browser.newPage();
 
       // Use mirror site as main site often blocks bots
@@ -93,7 +106,7 @@ export class LiveScoreAdapter implements IDataSource {
       this.logger.error('[LiveScore] Scrape failed', error);
       return null;
     } finally {
-      if (browser) await browser.close();
+      if (!browserInstance && browser) await browser.close();
     }
   }
 }

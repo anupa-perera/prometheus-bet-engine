@@ -12,13 +12,26 @@ export class SofaScoreAdapter implements IDataSource {
     homeTeam: string,
     awayTeam: string,
     _date?: Date,
+    browserInstance?: Browser,
   ): Promise<MatchData | null> {
     this.logger.log(
       `[SofaScore] Searching for ${homeTeam} vs ${awayTeam} (Date: ${_date ? _date.toISOString() : 'Any'})...`,
     );
     let browser: Browser | null = null;
     try {
-      browser = await chromium.launch({ headless: true });
+      if (browserInstance) {
+        browser = browserInstance;
+      } else {
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+          ],
+        });
+      }
       const page = await browser.newPage();
 
       // 1. Go to Homepage
@@ -125,7 +138,7 @@ export class SofaScoreAdapter implements IDataSource {
       this.logger.error('[SofaScore] Scrape failed', error);
       return null;
     } finally {
-      if (browser) await browser.close();
+      if (!browserInstance && browser) await browser.close();
     }
   }
 }

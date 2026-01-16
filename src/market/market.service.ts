@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { EVENT_STATUS, MARKET_STATUS } from '../common/constants';
 import { OracleService } from '../scraper/oracle.service';
 import { LlmService } from '../llm/llm.service';
+import { chromium, Browser } from 'playwright';
 
 import { BettingService } from '../betting/betting.service';
 
@@ -64,9 +65,12 @@ export class MarketService {
     }
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async checkAndResultMarkets() {
     this.logger.log('Checking for markets to result...');
+
+    // Browser instance for this batch
+    let browser: Browser | undefined;
 
     try {
       // Find IN_PLAY events
@@ -75,11 +79,24 @@ export class MarketService {
         include: { markets: true },
       });
 
+      if (inPlayEvents.length > 0) {
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+          ],
+        });
+      }
+
       for (const event of inPlayEvents) {
         // Check if finished via Consensus Oracle
         const resultMatch = await this.oracleService.getConsensusResult(
           event.homeTeam,
           event.awayTeam,
+          browser,
         );
 
         if (resultMatch && resultMatch.status === 'FINISHED') {
@@ -92,7 +109,7 @@ export class MarketService {
           const settlement = await this.llmService.settleMarkets(
             {
               ...resultMatch,
-              homeTeam: event.homeTeam, // Ensure consistent naming
+              homeTeam: event.homeTeam,
               awayTeam: event.awayTeam,
             },
             marketNames,
@@ -121,25 +138,11 @@ export class MarketService {
                     winningOutcome: res.winningOutcome,
                   },
                 });
-
-                // Trigger Bet Settlement (Outside of this tx? Or inside?)
-                // BettingService runs its own transaction, so we should call it after this tx commits,
-                // OR we refactor BettingService to accept a transaction client.
-                // For simplicity and to avoid long-running transactions here, we'll queue them or call immediately after.
-                // BUT if this tx fails, we shouldn't settle.
-                // Optimally: await this.bettingService.settleMarket(market.id, res.winningOutcome);
-                // Since BettingService.settleMarket uses a transaction, nesting them isn't supported by Prisma unless we pass `tx`.
-                // Let's call it AFTER this block for now, or accumulate IDs.
-
-                // Correction: BettingService logic is critical.
-                // I will add a TO-DO to refactor for transactional integrity later.
-                // For now, I will store settlement tasks.
               }
             }
           });
 
           // Execute Settlements (Post-Transaction)
-          // We need to re-loop or capture which markets were settled.
           for (const res of settlement.results) {
             const market = event.markets.find((m) => m.name === res.marketName);
             if (market) {
@@ -162,6 +165,8 @@ export class MarketService {
       }
     } catch (error) {
       this.logger.error('Error in Resulting Scheduler', error);
+    } finally {
+      if (browser) await browser.close();
     }
   }
   async getUpcomingEvents(sport?: string) {

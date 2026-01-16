@@ -5,6 +5,7 @@ import { SofaScoreAdapter } from './adapters/sofascore.adapter';
 import { LiveScoreAdapter } from './adapters/livescore.adapter';
 import { BBCAdapter } from './adapters/bbc.adapter';
 import { MatchData } from '../common/types';
+import { Browser } from 'playwright';
 
 @Injectable()
 export class OracleService {
@@ -23,27 +24,37 @@ export class OracleService {
   async getConsensusResult(
     homeTeam: string,
     awayTeam: string,
+    browserInstance?: Browser, // Accept reusable browser
   ): Promise<MatchData | null> {
     this.logger.log(
       `[Oracle] Gathering consensus for ${homeTeam} vs ${awayTeam}...`,
     );
 
-    // Poll all sources in parallel
-    const results = await Promise.all(
-      this.sources.map(async (source) => {
-        try {
-          return await source.findMatch(homeTeam, awayTeam);
-        } catch (e) {
-          this.logger.error(`[Oracle] Source ${source.name} failed`, e);
-          return null;
-        }
-      }),
-    );
+    // Poll poll sources sequentially/limited to avoid launching 4 browsers at once if no shared browser
+    const results: (MatchData | null)[] = [];
+
+    // For MVP stability on free tier, strict concurrency limit or sequential execution needed
+    for (const source of this.sources) {
+      try {
+        // If the adapter supports reusing browser, pass it (we need to update adapters too)
+        // For now, assume adapters might still launch their own if not passed.
+        // We need to update Adapter Inteface to accept browser
+        const res = await source.findMatch(
+          homeTeam,
+          awayTeam,
+          undefined,
+          browserInstance,
+        );
+        results.push(res);
+      } catch (e) {
+        this.logger.error(`[Oracle] Source ${source.name} failed`, e);
+        results.push(null);
+      }
+    }
 
     const validResults = results
       .filter((r) => r !== null)
       .filter((r) => {
-        // Strict Verification: Ensure the found match actually matches the requested teams
         const isMatch =
           this.verifyTeamName(homeTeam, r.homeTeam) &&
           this.verifyTeamName(awayTeam, r.awayTeam);
@@ -65,19 +76,6 @@ export class OracleService {
     const scoreCounts = new Map<string, number>();
 
     validResults.forEach((r) => {
-      // Extract score from "Source: 2-1 (FT)" string or similar if simplified
-      // The adapters currently put formatting in 'source' field sometimes
-      // But let's assume validResults usually have a reliable score format if we parse it.
-      // Actually, let's normalize the score extraction in the adapter or here.
-      // Adapters return `source` field like "Flashscore: 2-1 (Finished)"
-      // Let's rely on that for now, assuming adapters are doing their job.
-      // Better: Adapters should probably return a structured result, but MatchData has loose fields.
-      // Let's parse the score from the 'source' string or assume adapters should populate a 'score' field (which MatchData doesn't have explicitly, it's mixed).
-      // Wait, MatchData definition:
-      // export interface MatchData { ... source?: string; ... }
-      // Adapters are putting "Source: 2-1 (Status)" in the source field.
-
-      // Simple regex to extract "d-d" from the source string
       const match = r.source?.match(/(\d+-\d+)/);
       if (match) {
         const score = match[1];
@@ -85,7 +83,6 @@ export class OracleService {
       }
     });
 
-    // Find winner
     let bestScore: string | null = null;
     let maxVotes = 0;
 
@@ -100,7 +97,6 @@ export class OracleService {
       this.logger.log(
         `[Oracle] Consensus Reached: ${bestScore} with ${maxVotes}/${validResults.length} votes.`,
       );
-      // Return a composite result
       return {
         homeTeam,
         awayTeam,
