@@ -45,7 +45,7 @@ export class UserService {
         passwordHash,
         wallet: {
           create: {
-            balance: 0,
+            balance: 10000,
           },
         },
       },
