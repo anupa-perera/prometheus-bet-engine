@@ -38,7 +38,6 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "playwright": "^1.57.0",
-    "prisma": "^5.10.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },
@@ -60,6 +59,7 @@
     "jest": "^30.0.0",
     "lint-staged": "^16.2.7",
     "prettier": "^3.4.2",
+    "prisma": "^7.2.0",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
@@ -91,5 +91,8 @@
       "eslint --fix",
       "prettier --write"
     ]
+  },
+  "overrides": {
+    "@inquirer/prompts": "3.3.0"
   }
 }
