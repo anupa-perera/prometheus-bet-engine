@@ -9,7 +9,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:5173',
       'http://127.0.0.1:5173',
-      'https://prometheus-bet-engine-fe.vercel.app',
+      'https://prometheus-bet-engine.vercel.app',
     ],
     credentials: true,
   });
