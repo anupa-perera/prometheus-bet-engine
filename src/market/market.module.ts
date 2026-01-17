@@ -12,5 +12,6 @@ import { MarketController } from './market.controller';
   imports: [ScraperModule, LlmModule, BettingModule],
   controllers: [MarketController],
   providers: [MarketService, PrismaService],
+  exports: [MarketService],
 })
 export class MarketModule {}

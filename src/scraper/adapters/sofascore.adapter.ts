@@ -41,13 +41,6 @@ export class SofaScoreAdapter implements IDataSource {
       });
 
       // 2. Search
-      // Note: Selectors found during inspection
-      // Click search input (approximate location or generic selector)
-      // SofaScore often has a search icon to click first, or just typing triggers it.
-      // Based on inspection, we clicked coords. Let's try typing mostly.
-
-      // Fallback: Direct search URL if UI interaction is flaky
-      // https://www.sofascore.com/search?q=Real%20Madrid%20Barcelona
       await page.goto(
         `https://www.sofascore.com/search?q=${encodeURIComponent(homeTeam + ' ' + awayTeam)}`,
         { waitUntil: 'networkidle' },
@@ -89,9 +82,6 @@ export class SofaScoreAdapter implements IDataSource {
       await page.waitForLoadState('domcontentloaded');
 
       // 4. Extract Details using Inspection Selectors
-      // Home: h1 bdi:nth-of-type(1)
-      // Away: h1 bdi:nth-of-type(2)
-      // Score: span[class*="textStyle_display.extraLarge"]
 
       // Wait for score to appear
       try {
@@ -101,7 +91,7 @@ export class SofaScoreAdapter implements IDataSource {
         return null; // Page structure mismatch
       }
 
-      const matchData = await page.evaluate(() => {
+      const matchData = await page.evaluate(function () {
         const homeEl = document.querySelector('h1 bdi:nth-of-type(1)');
         const awayEl = document.querySelector('h1 bdi:nth-of-type(2)');
         const scores = document.querySelectorAll(
@@ -130,9 +120,9 @@ export class SofaScoreAdapter implements IDataSource {
       return {
         homeTeam: matchData.home,
         awayTeam: matchData.away,
-        startTime: new Date().toISOString(), // We mostly care about result here
+        startTime: new Date().toISOString(),
         source: `SofaScore: ${matchData.score} (${matchData.status})`,
-        sport: 'football', // generic for now
+        sport: 'football',
       };
     } catch (error) {
       this.logger.error('[SofaScore] Scrape failed', error);

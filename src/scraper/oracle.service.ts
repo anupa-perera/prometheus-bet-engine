@@ -18,6 +18,10 @@ export class OracleService {
     private readonly livescore: LiveScoreAdapter,
     private readonly bbc: BBCAdapter,
   ) {
+    if (!flashscore) console.error('[Oracle] FlashscoreAdapter UNDEFINED');
+    if (!sofascore) console.error('[Oracle] SofaScoreAdapter UNDEFINED');
+    if (!livescore) console.error('[Oracle] LiveScoreAdapter UNDEFINED');
+    if (!bbc) console.error('[Oracle] BBCAdapter UNDEFINED');
     this.sources = [flashscore, sofascore, livescore, bbc];
   }
 
@@ -94,6 +98,24 @@ export class OracleService {
     }
 
     if (bestScore) {
+      // Logic Check: ensure status is FINISHED (or FT/AET)
+      // We check if at least one source reported it as FINISHED
+      const isFinished = validResults.some(
+        (r) =>
+          r.status === 'FINISHED' ||
+          r.source?.includes('Finished') ||
+          r.source?.includes('FT') ||
+          r.source?.includes('AET') ||
+          r.source?.includes('Pen'),
+      );
+
+      if (!isFinished) {
+        this.logger.log(
+          `[Oracle] Consensus Score: ${bestScore}, but match is NOT FINISHED yet.`,
+        );
+        return null;
+      }
+
       this.logger.log(
         `[Oracle] Consensus Reached: ${bestScore} with ${maxVotes}/${validResults.length} votes.`,
       );
@@ -101,7 +123,7 @@ export class OracleService {
         homeTeam,
         awayTeam,
         startTime: new Date().toISOString(),
-        source: `Consensus: ${bestScore} (Votes: ${maxVotes}/${validResults.length})`,
+        source: `Consensus: ${bestScore} (Finished) (Votes: ${maxVotes}/${validResults.length})`,
         status: 'FINISHED',
         sport: validResults[0].sport,
       };

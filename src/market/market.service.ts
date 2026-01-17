@@ -17,7 +17,14 @@ export class MarketService {
     private oracleService: OracleService,
     private llmService: LlmService,
     private bettingService: BettingService,
-  ) {}
+  ) {
+    if (!this.prisma)
+      console.error('MarketService: PrismaService is UNDEFINED');
+    else console.log('MarketService: PrismaService injected');
+
+    if (!this.oracleService)
+      console.error('MarketService: OracleService is UNDEFINED');
+  }
 
   private isLocking = false;
   private isResulting = false;
@@ -88,13 +95,25 @@ export class MarketService {
     let browser: Browser | undefined;
 
     try {
-      // Find IN_PLAY events
-      const inPlayEvents = await this.prisma.event.findMany({
-        where: { status: EVENT_STATUS.IN_PLAY },
+      // Find IN_PLAY events OR FINISHED events that have unsettled markets
+      // Prisma doesn't support complex cross-relation filtering easily in one go,
+      // so we might need to fetch a bit more or used raw query.
+      // For now, let's fetch IN_PLAY and FINISHED.
+      const candidateEvents = await this.prisma.event.findMany({
+        where: {
+          status: { in: [EVENT_STATUS.IN_PLAY, EVENT_STATUS.FINISHED] },
+        },
         include: { markets: true },
+        take: 50, // Limit to avoid processing old finished events forever
+        orderBy: { updatedAt: 'desc' }, // Check recently updated ones
       });
 
-      if (inPlayEvents.length > 0) {
+      // Filter for events that actually need resulting (have non-resulted markets)
+      const eventsToResult = candidateEvents.filter((e) =>
+        e.markets.some((m) => m.status !== MARKET_STATUS.RESULTED),
+      );
+
+      if (eventsToResult.length > 0) {
         browser = await chromium.launch({
           headless: true,
           args: [
@@ -106,7 +125,7 @@ export class MarketService {
         });
       }
 
-      for (const event of inPlayEvents) {
+      for (const event of eventsToResult) {
         // Check if finished via Consensus Oracle
         const resultMatch = await this.oracleService.getConsensusResult(
           event.homeTeam,

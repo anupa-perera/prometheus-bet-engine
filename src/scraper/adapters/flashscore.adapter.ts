@@ -101,7 +101,7 @@ export class FlashscoreAdapter implements IDataSource {
         away: string;
         score: string;
         status: string;
-      } | null>(() => {
+      } | null>(function () {
         const homeEl = document.querySelector(
           '.duelParticipant__home .participant__participantName',
         );

@@ -8,9 +8,11 @@ import { FlashscoreAdapter } from './adapters/flashscore.adapter';
 import { SofaScoreAdapter } from './adapters/sofascore.adapter';
 import { LiveScoreAdapter } from './adapters/livescore.adapter';
 import { BBCAdapter } from './adapters/bbc.adapter';
+import { BettingModule } from '../betting/betting.module';
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
-  imports: [LlmModule],
+  imports: [LlmModule, BettingModule, WalletModule],
   controllers: [ScraperController],
   providers: [
     ScraperService,
@@ -21,6 +23,13 @@ import { BBCAdapter } from './adapters/bbc.adapter';
     LiveScoreAdapter,
     BBCAdapter,
   ],
-  exports: [ScraperService, OracleService],
+  exports: [
+    ScraperService,
+    OracleService,
+    FlashscoreAdapter,
+    SofaScoreAdapter,
+    LiveScoreAdapter,
+    BBCAdapter,
+  ],
 })
 export class ScraperModule {}

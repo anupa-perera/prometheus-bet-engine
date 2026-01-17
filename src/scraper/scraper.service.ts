@@ -6,12 +6,17 @@ import { LlmService } from '../llm/llm.service';
 import { MatchData, MarketData } from '../common/types';
 import { EXTERNAL_URLS } from '../common/constants';
 
+import { BettingService } from '../betting/betting.service';
+import { MARKET_STATUS } from '../common/constants';
+
 export interface ScrapedMatch {
   home: string;
   away: string;
   time: string;
   source: string;
   raw?: string;
+  homeScore?: string;
+  awayScore?: string;
 }
 
 @Injectable()
@@ -21,6 +26,7 @@ export class ScraperService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private llmService: LlmService,
+    private bettingService: BettingService,
   ) {}
 
   onModuleInit() {
@@ -168,6 +174,9 @@ export class ScraperService implements OnModuleInit {
               const timeEl = el.querySelector('.event__time');
               const statusEl = el.querySelector('.event__stage');
 
+              const homeScoreEl = el.querySelector('.event__score--home');
+              const awayScoreEl = el.querySelector('.event__score--away');
+
               return {
                 home: homeEl?.textContent?.trim() || 'Unknown Home',
                 away: awayEl?.textContent?.trim() || 'Unknown Away',
@@ -176,6 +185,8 @@ export class ScraperService implements OnModuleInit {
                   statusEl?.textContent?.trim() ||
                   '',
                 source: 'flashscore',
+                homeScore: homeScoreEl?.textContent?.trim(),
+                awayScore: awayScoreEl?.textContent?.trim(),
               };
             } catch {
               return null;
@@ -246,6 +257,79 @@ export class ScraperService implements OnModuleInit {
           },
           include: { markets: true },
         });
+
+        // 4. CHECK FOR RESULTING (Fine-tuning scraper to result markets)
+        if (
+          correctStatus === 'FINISHED' &&
+          match.homeScore &&
+          match.awayScore
+        ) {
+          const openMarkets = savedEvent.markets.filter(
+            (m) => m.status !== MARKET_STATUS.RESULTED,
+          );
+
+          if (openMarkets.length > 0) {
+            this.logger.log(
+              `Scraper found FINISHED event with open markets: ${savedEvent.homeTeam} vs ${savedEvent.awayTeam}. Resulting now...`,
+            );
+
+            const scoreString = `${match.homeScore}-${match.awayScore}`;
+
+            // Call LLM Settle
+            const marketNames = openMarkets.map((m) => m.name);
+            const settlement = await this.llmService.settleMarkets(
+              {
+                homeTeam: savedEvent.homeTeam,
+                awayTeam: savedEvent.awayTeam,
+                startTime: savedEvent.startTime.toISOString(),
+                source: `Consensus: ${scoreString} (Finished)`,
+                status: 'FINISHED',
+                sport: sport,
+              },
+              marketNames,
+            );
+
+            this.logger.log(
+              `Scraper Result decision: ${JSON.stringify(settlement)}`,
+            );
+
+            // Apply Results
+            await this.prisma.$transaction(async (tx) => {
+              for (const res of settlement.results) {
+                const market = openMarkets.find(
+                  (m) => m.name === res.marketName,
+                );
+                if (market) {
+                  await tx.market.update({
+                    where: { id: market.id },
+                    data: {
+                      status: MARKET_STATUS.RESULTED,
+                      winningOutcome: res.winningOutcome,
+                    },
+                  });
+                }
+              }
+            });
+
+            // Settlement execution (outside tx to avoid long locks)
+            for (const res of settlement.results) {
+              const market = openMarkets.find((m) => m.name === res.marketName);
+              if (market && res.winningOutcome !== 'VOID') {
+                try {
+                  await this.bettingService.settleMarket(
+                    market.id,
+                    res.winningOutcome,
+                  );
+                } catch (e) {
+                  this.logger.error(
+                    `Failed to settle bets for market ${market.id}`,
+                    e,
+                  );
+                }
+              }
+            }
+          }
+        }
 
         processedResults.push(savedEvent);
       }

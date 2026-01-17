@@ -50,14 +50,12 @@ export class LiveScoreAdapter implements IDataSource {
       // Selectors on livescores.com mirror:
       // Rows usually have links. We'll search for text.
       const matchLink = await page.evaluate(
-        ({ home, away }) => {
+        function ({ home, away }) {
           const links = Array.from(document.querySelectorAll('a'));
-          const normalize = (s: string) =>
-            s.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const hReq = normalize(home);
-          const aReq = normalize(away);
 
-          return links.find((l) => {
+          return links.find(function (l) {
+            const hReq = home.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const aReq = away.toLowerCase().replace(/[^a-z0-9]/g, '');
             const text = l.innerText.toLowerCase();
             return text.includes(hReq) && text.includes(aReq);
           })?.href;
@@ -75,7 +73,7 @@ export class LiveScoreAdapter implements IDataSource {
       // Extract details
       // On mirror sites, classes are often obfuscated (e.g. .Se, .Te).
       // We will use text-based heuristics for robustness.
-      const matchData = await page.evaluate(() => {
+      const matchData = await page.evaluate(function () {
         const text = document.body.innerText;
         // Simple regex to find score like "2 - 1" or "2 : 1" near the top
         const scoreMatch = text.match(/(\d+)\s*[-:]\s*(\d+)/);
@@ -96,11 +94,17 @@ export class LiveScoreAdapter implements IDataSource {
       );
 
       return {
-        homeTeam: homeTeam, // Return requested names to keep consistent, or parse from header
+        homeTeam: homeTeam,
         awayTeam: awayTeam,
         startTime: new Date().toISOString(),
         source: `LiveScore: ${matchData.score} (${matchData.status})`,
         sport: 'football',
+        status:
+          matchData.status.includes('FT') ||
+          matchData.status.includes('Full') ||
+          matchData.status.includes('Finished')
+            ? 'FINISHED'
+            : 'IN_PLAY',
       };
     } catch (error) {
       this.logger.error('[LiveScore] Scrape failed', error);

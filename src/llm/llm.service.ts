@@ -139,9 +139,10 @@ Example:
         ${JSON.stringify(marketNames)}
 
         Task:
-        1. Analyze the "Info" string (which contains scraped score/status like "Nigeria 1-1 Morocco (Pen 4-5)").
-        2. Determine the WINNING OUTCOME for each market.
-        3. If you cannot determine the winner (e.g. data missing), use "VOID".
+        1. Analyze the "Info" string. It typically contains "Consensus: X-Y (Finished)...".
+        2. Determine the WINNING OUTCOME for each market based on this score.
+        3. Even if the text doesn't explicitly say "Full Time", if the Info source is "Consensus" and has a score, assume it is the Final Result.
+        4. ONLY use "VOID" if the score is missing or the match was Abandoned/Cancelled. Do not VOID if you have a valid score (e.g. 2-1).
 
         Format:
         Return ONLY valid JSON:

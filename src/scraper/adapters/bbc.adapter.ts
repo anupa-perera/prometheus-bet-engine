@@ -48,19 +48,16 @@ export class BBCAdapter implements IDataSource {
       // Links usually contain /sport/football/
       // And headlines often match.
       const matchLink = await page.evaluate(
-        ({ home, away }) => {
+        function ({ home, away }) {
           const elements = document.querySelectorAll(
             'a[href*="/sport/football/"]',
           );
           const links: HTMLAnchorElement[] = [];
           elements.forEach((el) => links.push(el as HTMLAnchorElement));
 
-          const normalize = (s: string) =>
-            s.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const hReq = normalize(home);
-          const aReq = normalize(away);
-
-          const found = links.find((l) => {
+          return links.find(function (l) {
+            const hReq = home.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const aReq = away.toLowerCase().replace(/[^a-z0-9]/g, '');
             const text = l.innerText.toLowerCase();
             const href = l.href.toLowerCase();
             const isMatch =
@@ -68,8 +65,7 @@ export class BBCAdapter implements IDataSource {
               !href.includes('scores-fixtures') &&
               !href.includes('tables');
             return isMatch;
-          });
-          return found ? found.href : undefined;
+          })?.href;
         },
         { home: homeTeam, away: awayTeam },
       );
@@ -87,7 +83,7 @@ export class BBCAdapter implements IDataSource {
         away: string | undefined;
         score: string;
         status: string;
-      } | null>(() => {
+      } | null>(function () {
         // BBC uses complex classes but also robust data-testids in the scoreboard
         // Try stable data-testid based logic first if available in newer layouts
 
