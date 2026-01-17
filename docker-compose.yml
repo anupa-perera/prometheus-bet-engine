@@ -21,6 +21,8 @@ services:
     environment:
       # Override DATABASE_URL to verify against the containerized DB service name "postgres"
       DATABASE_URL: postgresql://user:password@postgres:5432/betting_db?schema=public
-      # Add other necessary env vars here, or use env_file
+    env_file:
+      - .env
     restart: always
+
 
