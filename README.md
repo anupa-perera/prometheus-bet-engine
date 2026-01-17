@@ -5,6 +5,10 @@
   <p align="center">A decentralized, autonomous, pool-based betting system powered by AI and Consensus Oracles.</p>
 </p>
 
+## Live Deployment
+
+ **API Live URL:** [https://prometheus-bet-engine.work.gd](https://prometheus-bet-engine.work.gd)
+
 ## Overview
 
 The Prometheus Betting Engine is a modular, event-driven platform that automates the entire lifecycle of a sports betting market. Unlike traditional bookmakers that rely on manual odds setting and resulting, Prometheus uses:
