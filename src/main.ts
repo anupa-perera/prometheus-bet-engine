@@ -10,6 +10,9 @@ async function bootstrap() {
       'http://localhost:5173',
       'http://127.0.0.1:5173',
       'https://prometheus-bet-engine.vercel.app',
+      'https://prometheus-bet-engine.vercel.app/',
+      'https://prometheus-bet-engine.netlify.app',
+      'https://prometheus-bet-engine.netlify.app/',
     ],
     credentials: true,
   });
