@@ -10,3 +10,17 @@ services:
     ports:
       - '5432:5432'
     restart: always
+
+  app:
+    build: .
+    container_name: betting_engine_app
+    ports:
+      - '3000:3000'
+    depends_on:
+      - postgres
+    environment:
+      # Override DATABASE_URL to verify against the containerized DB service name "postgres"
+      DATABASE_URL: postgresql://user:password@postgres:5432/betting_db?schema=public
+      # Add other necessary env vars here, or use env_file
+    restart: always
+
