@@ -8,6 +8,7 @@ import { ScraperModule } from './scraper/scraper.module';
 import { PrismaService } from './prisma.service';
 import { LlmModule } from './llm/llm.module';
 import { MarketModule } from './market/market.module';
+import { EventsModule } from './events/events.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { UserModule } from './user/user.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -26,6 +27,7 @@ import { BettingModule } from './betting/betting.module';
     UserModule,
     WalletModule,
     BettingModule,
+    EventsModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],

@@ -14,6 +14,7 @@ import { PrismaService } from '../src/prisma.service';
 import { ConfigModule } from '@nestjs/config';
 import { WalletModule } from '../src/wallet/wallet.module';
 import { MarketModule } from '../src/market/market.module';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 async function testResulting() {
   console.log('Initializing Test Module...');
@@ -48,12 +49,18 @@ async function testResulting() {
   const llmService = moduleRef.get<LlmService>(LlmService);
   const bettingService = moduleRef.get<BettingService>(BettingService);
 
+  // ... (existing imports)
+
   console.log('Manually Instantiating MarketService...');
+  // Mock EventEmitter
+  const mockEmitter = { emit: () => true } as unknown as EventEmitter2;
+
   const marketService = new MarketService(
     prisma,
     oracleService,
     llmService,
     bettingService,
+    mockEmitter,
   );
 
   console.log('Creating Mock Event that is "Finished" but not Resulted...');

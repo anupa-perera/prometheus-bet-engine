@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma.service';
 import { EVENT_STATUS, MARKET_STATUS } from '../common/constants';
 import { OracleService } from '../scraper/oracle.service';
@@ -17,6 +18,7 @@ export class MarketService {
     private oracleService: OracleService,
     private llmService: LlmService,
     private bettingService: BettingService,
+    private eventEmitter: EventEmitter2,
   ) {
     if (!this.prisma)
       console.error('MarketService: PrismaService is UNDEFINED');
@@ -73,6 +75,15 @@ export class MarketService {
         this.logger.log(
           `Locked markets for Event: ${event.homeTeam} vs ${event.awayTeam} (Started at ${event.startTime.toISOString()})`,
         );
+      }
+
+      // Emit update event if we processed anything
+      if (eventsToLock.length > 0) {
+        const updatedEvents = await this.getUpcomingEvents();
+        this.eventEmitter.emit('market.update', {
+          type: 'upcoming',
+          events: updatedEvents,
+        });
       }
     } catch (error) {
       this.logger.error('Error in Market Locking Scheduler', error);
@@ -196,6 +207,15 @@ export class MarketService {
 
           this.logger.log('Markets Resulted Successfully.');
         }
+      }
+
+      // Emit update event if we processed anything
+      if (eventsToResult.length > 0) {
+        const updatedFinished = await this.getFinishedEvents();
+        this.eventEmitter.emit('market.update', {
+          type: 'finished',
+          events: updatedFinished,
+        });
       }
     } catch (error) {
       this.logger.error('Error in Resulting Scheduler', error);
