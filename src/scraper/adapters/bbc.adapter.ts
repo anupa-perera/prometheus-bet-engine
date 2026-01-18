@@ -88,7 +88,7 @@ export class BBCAdapter implements IDataSource {
         // Try stable data-testid based logic first if available in newer layouts
 
         // Teams
-        // DesktopValue class seems relatively stable in the header
+
         const homeEl = document.querySelector(
           '.ssrcss-dznsxc-StyledTeam-HomeTeam .ssrcss-1p14tic-DesktopValue, [data-testid="home-team-name"], .HomeTeam .DesktopValue',
         );
