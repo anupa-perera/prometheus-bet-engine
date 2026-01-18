@@ -3,6 +3,7 @@ import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import noCommentedCode from 'eslint-plugin-no-commented-code';
 
 export default tseslint.config(
   {
@@ -30,6 +31,10 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       "prettier/prettier": ["error", { endOfLine: "auto" }],
+      "no-commented-code/no-commented-code": "error",
+    },
+    plugins: {
+      "no-commented-code": noCommentedCode,
     },
   },
 );
