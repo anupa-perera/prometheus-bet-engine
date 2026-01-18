@@ -30,13 +30,7 @@ export class ScraperService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.logger.log(
-      'ScraperService initialized. Scheduling immediate scrape in 10s...',
-    );
-    // Delay slightly to allow server to fully start
-    setTimeout(() => {
-      void this.scrapeAllSports();
-    }, 10000);
+    this.logger.log('ScraperService initialized.');
   }
 
   // Helper to determine status from time string
