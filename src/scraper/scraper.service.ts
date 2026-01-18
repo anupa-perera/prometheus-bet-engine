@@ -225,6 +225,9 @@ export class ScraperService implements OnModuleInit {
             `New event found: ${matchToProcess.homeTeam} vs ${matchToProcess.awayTeam}. Generating markets...`,
           );
           aiMarkets = await this.llmService.generateMarkets(matchToProcess);
+
+          // Enforce Winner Market
+          this.ensureWinnerMarket(aiMarkets, sport);
         }
 
         const savedEvent = await this.prisma.event.upsert({
@@ -434,5 +437,43 @@ export class ScraperService implements OnModuleInit {
     }
 
     return null;
+  }
+
+  private ensureWinnerMarket(markets: MarketData[], sport: string) {
+    const winnerKeywords = [
+      'Winner',
+      'Match Result',
+      'Moneyline',
+      '1x2',
+      'Full Time Result',
+    ];
+    const hasWinner = markets.some((m) =>
+      winnerKeywords.some((k) => m.name.includes(k)),
+    );
+
+    if (!hasWinner) {
+      this.logger.warn(
+        `LLM failed to generate Winner market for ${sport}. Adding default.`,
+      );
+      if (sport === 'football') {
+        markets.unshift({
+          name: 'Match Result',
+          outcomes: ['Home Win', 'Draw', 'Away Win'],
+        });
+      } else if (
+        ['tennis', 'basketball', 'american-football'].includes(sport)
+      ) {
+        markets.unshift({
+          name: 'Winner',
+          outcomes: ['Home Win', 'Away Win'],
+        });
+      } else {
+        // Generic fallback
+        markets.unshift({
+          name: 'Winner',
+          outcomes: ['Home Win', 'Away Win'],
+        });
+      }
+    }
   }
 }

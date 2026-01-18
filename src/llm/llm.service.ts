@@ -12,7 +12,6 @@ import { EXTERNAL_URLS } from '../common/constants';
 @Injectable()
 export class LlmService {
   private readonly logger = new Logger(LlmService.name);
-  // private readonly openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions'; // Moved to constants
 
   constructor(private configService: ConfigService) {}
 
@@ -42,7 +41,8 @@ export class LlmService {
 Task:
 1. Verify the SPORT is ${matchData.sport || 'correct based on teams'}.
         2. Generate 3 - 5 engaging betting markets suitable for this sport. 
-        3. Since this is a POOL system, DO NOT generate odds.Just the market name and valid outcomes.
+        3. CRITICAL: The FIRST market MUST be the "Winner" market (e.g., "Match Result", "Moneyline", "Winner").
+        4. Since this is a POOL system, DO NOT generate odds.Just the market name and valid outcomes.
 
     Format: 
         Return ONLY valid JSON with this structure:
@@ -100,10 +100,8 @@ Example:
 
       const parsed = JSON.parse(cleanContent || '{}') as LlmResponse;
 
-      // Handle the new structure { sport: string, markets: [...] }
       if (parsed.markets && Array.isArray(parsed.markets)) {
-        return parsed.markets; // For now, just return markets to keep service contract similar
-        // TODO: We should probably return the 'sport' as well to save it on the Event
+        return parsed.markets;
       }
 
       return [];
