@@ -200,12 +200,17 @@ export class ScraperService implements OnModuleInit {
 
         const correctStatus = this.determineStatus(match.time);
 
+        const hScore = match.homeScore ? parseInt(match.homeScore) : undefined;
+        const aScore = match.awayScore ? parseInt(match.awayScore) : undefined;
+
         const matchToProcess: MatchData = {
           homeTeam: match.home,
           awayTeam: match.away,
           startTime: match.time || new Date().toISOString(),
           source: 'flashscore-scraped',
           sport: sport,
+          homeScore: isNaN(hScore!) ? undefined : hScore,
+          awayScore: isNaN(aScore!) ? undefined : aScore,
         };
 
         const parsedStartTime = this.parseTime(matchToProcess.startTime);
@@ -234,6 +239,8 @@ export class ScraperService implements OnModuleInit {
           where: { externalId: eventId },
           update: {
             status: correctStatus,
+            homeScore: matchToProcess.homeScore,
+            awayScore: matchToProcess.awayScore,
           },
           create: {
             externalId: eventId,
@@ -245,11 +252,25 @@ export class ScraperService implements OnModuleInit {
             ),
             status: correctStatus,
             sport: sport,
+            homeScore: matchToProcess.homeScore,
+            awayScore: matchToProcess.awayScore,
             markets: {
-              create: aiMarkets.map((m) => ({
-                name: m.name,
-                status: 'OPEN',
-              })),
+              create: aiMarkets.flatMap((m) => {
+                if (m.outcomes && m.outcomes.length > 0) {
+                  return m.outcomes.map((outcome) => {
+                    const name =
+                      typeof outcome === 'string' ? outcome : outcome.name;
+                    return {
+                      name: name,
+                      status: 'OPEN',
+                    };
+                  });
+                }
+                return {
+                  name: m.name,
+                  status: 'OPEN',
+                };
+              }),
             },
           },
           include: { markets: true },

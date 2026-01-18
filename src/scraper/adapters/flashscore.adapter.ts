@@ -131,6 +131,10 @@ export class FlashscoreAdapter implements IDataSource {
         `[Flashscore] Found: ${details.home} ${details.score} ${details.away}`,
       );
 
+      const [homeScore, awayScore] = details.score
+        .split('-')
+        .map((s) => parseInt(s.trim()));
+
       return {
         homeTeam: details.home,
         awayTeam: details.away,
@@ -138,6 +142,8 @@ export class FlashscoreAdapter implements IDataSource {
         source: `Flashscore: ${details.score} (${details.status})`,
         sport: 'football',
         status: details.status === 'Finished' ? 'FINISHED' : 'IN_PLAY',
+        homeScore: isNaN(homeScore) ? undefined : homeScore,
+        awayScore: isNaN(awayScore) ? undefined : awayScore,
       };
     } catch (error: any) {
       this.logger.error('[Flashscore] Scrape failed', error);

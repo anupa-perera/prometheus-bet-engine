@@ -21,6 +21,8 @@ model Event {
   startTime      DateTime
   projectedEnd   DateTime
   status         String      @default("SCHEDULED")
+  homeScore      Int?
+  awayScore      Int?
   markets        Market[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

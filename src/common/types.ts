@@ -8,6 +8,8 @@ export interface MatchData {
   projectedEnd?: string;
   sport?: string;
   status?: string;
+  homeScore?: number;
+  awayScore?: number;
 }
 
 export interface MarketOutcome {
