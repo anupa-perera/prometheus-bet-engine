@@ -10,6 +10,11 @@ export class MarketController {
     return this.marketService.getUpcomingEvents(sport);
   }
 
+  @Get('live')
+  async getLive(@Query('sport') sport?: string) {
+    return this.marketService.getLiveEvents(sport);
+  }
+
   @Get('results')
   async getResults(@Query('sport') sport?: string) {
     return this.marketService.getFinishedEvents(sport);

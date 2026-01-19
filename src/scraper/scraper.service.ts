@@ -36,20 +36,25 @@ export class ScraperService implements OnModuleInit {
   // Helper to determine status from time string
   private determineStatus(
     timeStr: string,
-  ): 'SCHEDULED' | 'IN_PLAY' | 'FINISHED' {
+  ): 'SCHEDULED' | 'IN_PLAY' | 'FINISHED' | 'AWAITING_RESULTS' {
     const t = timeStr.trim();
 
-    // 1. Finished / Cancelled / Postponed
+    // 1. Finished / Cancelled / Postponed -> Move to AWAITING_RESULTS first to verify
     if (
       t.includes('Finished') ||
       t.includes('FT') ||
       t.includes('After') ||
       t.includes('Pen') ||
-      t.includes('AET') ||
+      t.includes('AET')
+    ) {
+      return 'AWAITING_RESULTS';
+    }
+
+    if (
       t.includes('Postp') ||
       t.includes('Canceled') ||
       t.includes('Advancing') ||
-      t.includes('Abn') // Abandoned
+      t.includes('Abn')
     ) {
       return 'FINISHED';
     }
@@ -278,7 +283,8 @@ export class ScraperService implements OnModuleInit {
 
         // 4. CHECK FOR RESULTING (Fine-tuning scraper to result markets)
         if (
-          correctStatus === 'FINISHED' &&
+          (correctStatus === 'FINISHED' ||
+            correctStatus === 'AWAITING_RESULTS') &&
           match.homeScore &&
           match.awayScore
         ) {

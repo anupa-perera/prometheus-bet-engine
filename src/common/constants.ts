@@ -7,6 +7,7 @@ export const EXTERNAL_URLS = {
 export const EVENT_STATUS = {
   SCHEDULED: 'SCHEDULED',
   IN_PLAY: 'IN_PLAY',
+  AWAITING_RESULTS: 'AWAITING_RESULTS',
   FINISHED: 'FINISHED',
 } as const;
 

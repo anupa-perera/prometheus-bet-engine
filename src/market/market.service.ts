@@ -31,12 +31,41 @@ export class MarketService {
   private isLocking = false;
   private isResulting = false;
 
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async checkFrozenLiveEvents() {
+    this.logger.log('Checking for frozen live events...');
+    const now = new Date();
+    try {
+      const frozenEvents = await this.prisma.event.findMany({
+        where: {
+          status: EVENT_STATUS.IN_PLAY,
+          projectedEnd: {
+            lte: now,
+          },
+        },
+      });
+
+      if (frozenEvents.length > 0) {
+        this.logger.log(
+          `Found ${frozenEvents.length} frozen live events. Moving to AWAITING_RESULTS.`,
+        );
+
+        for (const event of frozenEvents) {
+          await this.prisma.event.update({
+            where: { id: event.id },
+            data: { status: EVENT_STATUS.AWAITING_RESULTS },
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error checking frozen live events', error);
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async checkAndLockMarkets() {
     if (this.isLocking) return;
     this.isLocking = true;
-
-    // this.logger.log('Checking for markets to lock...'); // Reduce noise
     const now = new Date();
 
     try {
@@ -77,12 +106,12 @@ export class MarketService {
         );
       }
 
-      // Emit update event if we processed anything
+      // Emit update event
       if (eventsToLock.length > 0) {
-        const updatedEvents = await this.getUpcomingEvents();
+        const liveEvents = await this.getLiveEvents();
         this.eventEmitter.emit('market.update', {
-          type: 'upcoming',
-          events: updatedEvents,
+          type: 'live',
+          events: liveEvents,
         });
       }
     } catch (error) {
@@ -106,13 +135,12 @@ export class MarketService {
     let browser: Browser | undefined;
 
     try {
-      // Find IN_PLAY events OR FINISHED events that have unsettled markets
-      // Prisma doesn't support complex cross-relation filtering easily in one go,
-      // so we might need to fetch a bit more or used raw query.
-      // For now, let's fetch IN_PLAY and FINISHED.
+      // Find AWAITING_RESULTS events OR FINISHED events that have unsettled markets
       const candidateEvents = await this.prisma.event.findMany({
         where: {
-          status: { in: [EVENT_STATUS.IN_PLAY, EVENT_STATUS.FINISHED] },
+          status: {
+            in: [EVENT_STATUS.AWAITING_RESULTS, EVENT_STATUS.FINISHED],
+          },
         },
         include: { markets: true },
         take: 50, // Limit to avoid processing old finished events forever
@@ -227,11 +255,22 @@ export class MarketService {
   async getUpcomingEvents(sport?: string) {
     return this.prisma.event.findMany({
       where: {
-        status: { in: [EVENT_STATUS.SCHEDULED, EVENT_STATUS.IN_PLAY] },
+        status: EVENT_STATUS.SCHEDULED,
         sport: sport === 'all' ? undefined : sport,
       },
       include: { markets: true },
       orderBy: { startTime: 'asc' },
+    });
+  }
+
+  async getLiveEvents(sport?: string) {
+    return this.prisma.event.findMany({
+      where: {
+        status: EVENT_STATUS.IN_PLAY,
+        sport: sport === 'all' ? undefined : sport,
+      },
+      include: { markets: true },
+      orderBy: { startTime: 'desc' }, // Latest live top
     });
   }
 
