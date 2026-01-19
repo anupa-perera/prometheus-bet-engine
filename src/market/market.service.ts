@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma.service';
 import { EVENT_STATUS, MARKET_STATUS } from '../common/constants';
 import { OracleService } from '../scraper/oracle.service';
@@ -8,6 +8,7 @@ import { LlmService } from '../llm/llm.service';
 import { chromium, Browser } from 'playwright';
 
 import { BettingService } from '../betting/betting.service';
+import type { Event } from '@prisma/client';
 
 @Injectable()
 export class MarketService {
@@ -28,10 +29,59 @@ export class MarketService {
       console.error('MarketService: OracleService is UNDEFINED');
   }
 
+  private isBroadcasting = false;
+
+  @OnEvent('event.scraped')
+  broadcastSingleUpdate(event: Event) {
+    // Note: We intentionally allow single updates even if a full broadcast is running
+    // to ensure maximum responsiveness.
+    this.eventEmitter.emit('market.update', {
+      type: 'event_update',
+      event: event,
+    });
+  }
+
+  @OnEvent('scraper.finished')
+  async broadcastAllUpdates() {
+    if (this.isBroadcasting) {
+      this.logger.warn('Broadcast already in progress, throttling update.');
+      return;
+    }
+    this.isBroadcasting = true;
+
+    try {
+      this.logger.log('Scraper update received. Broadcasting fresh data...');
+      const [liveEvents, upcomingEvents, finishedEvents] = await Promise.all([
+        this.getLiveEvents(),
+        this.getUpcomingEvents(),
+        this.getFinishedEvents(),
+      ]);
+
+      this.eventEmitter.emit('market.update', {
+        type: 'live',
+        events: liveEvents,
+      });
+
+      this.eventEmitter.emit('market.update', {
+        type: 'upcoming',
+        events: upcomingEvents,
+      });
+
+      this.eventEmitter.emit('market.update', {
+        type: 'finished',
+        events: finishedEvents,
+      });
+    } catch (error) {
+      this.logger.error('Failed to broadcast updates', error);
+    } finally {
+      this.isBroadcasting = false;
+    }
+  }
+
   private isLocking = false;
   private isResulting = false;
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async checkFrozenLiveEvents() {
     this.logger.log('Checking for frozen live events...');
     const now = new Date();
@@ -62,7 +112,7 @@ export class MarketService {
     }
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async checkAndLockMarkets() {
     if (this.isLocking) return;
     this.isLocking = true;
@@ -121,7 +171,7 @@ export class MarketService {
     }
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async checkAndResultMarkets() {
     if (this.isResulting) {
       this.logger.warn('Resulting already in progress. Skipping...');

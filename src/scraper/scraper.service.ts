@@ -1,13 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { chromium, Browser, Page } from 'playwright';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { MatchData, MarketData } from '../common/types';
-import { EXTERNAL_URLS } from '../common/constants';
-
+import { EXTERNAL_URLS, MARKET_STATUS } from '../common/constants';
 import { BettingService } from '../betting/betting.service';
-import { MARKET_STATUS } from '../common/constants';
 
 export interface ScrapedMatch {
   home: string;
@@ -27,10 +26,82 @@ export class ScraperService implements OnModuleInit {
     private prisma: PrismaService,
     private llmService: LlmService,
     private bettingService: BettingService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   onModuleInit() {
     this.logger.log('ScraperService initialized.');
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async scrapeAllSports() {
+    if (this.isScraping) {
+      this.logger.warn('Scraping already in progress, skipping this run.');
+      return;
+    }
+
+    this.isScraping = true;
+    this.logger.log('Running Scheduled Ingestion for all sports...');
+
+    const sports = [
+      'football',
+      'tennis',
+      'basketball',
+      'hockey',
+      'cricket',
+      'baseball',
+      'rugby-union',
+      'american-football',
+      'boxing',
+      'mma',
+      'motorsport',
+    ];
+
+    let browser: Browser | null = null;
+    const results = [];
+
+    try {
+      // Launch shared browser instance
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
+      });
+
+      for (const sport of sports) {
+        try {
+          this.logger.log(`Starting scrape for sport: ${sport}`);
+          // Reuse the single browser instance
+          const result = await this.inspectFlashscoreSelectors(sport, browser);
+          results.push({
+            sport,
+            success: true,
+            count: result.scrapedMatches.length,
+          });
+          // Small delay to let system breathe
+          await new Promise((r) => setTimeout(r, 2000));
+        } catch (error) {
+          this.logger.error(`Failed to scrape sport: ${sport}`, error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          results.push({ sport, success: false, error: errorMessage });
+        }
+
+        // Emit update after EACH sport key update
+        this.eventEmitter.emit('scraper.finished');
+      }
+    } catch (e) {
+      this.logger.error('Critical scraper error', e);
+    } finally {
+      if (browser) await browser.close();
+      this.isScraping = false;
+    }
+
+    return results;
   }
 
   // Helper to determine status from time string
@@ -45,18 +116,16 @@ export class ScraperService implements OnModuleInit {
       t.includes('FT') ||
       t.includes('After') ||
       t.includes('Pen') ||
-      t.includes('AET')
-    ) {
-      return 'AWAITING_RESULTS';
-    }
-
-    if (
+      t.includes('AET') ||
       t.includes('Postp') ||
       t.includes('Canceled') ||
-      t.includes('Advancing') ||
-      t.includes('Abn')
+      t.includes('Cancelled') ||
+      t.includes('Abn') ||
+      t.includes('Interrupted') ||
+      t.includes('Walkover') ||
+      t.includes('Retired')
     ) {
-      return 'FINISHED';
+      return 'AWAITING_RESULTS';
     }
 
     // 2. Scheduled (HH:mm)
@@ -281,6 +350,9 @@ export class ScraperService implements OnModuleInit {
           include: { markets: true },
         });
 
+        // Broadcast single event update immediately
+        this.eventEmitter.emit('event.scraped', savedEvent);
+
         // 4. CHECK FOR RESULTING (Fine-tuning scraper to result markets)
         if (
           (correctStatus === 'FINISHED' ||
@@ -371,68 +443,6 @@ export class ScraperService implements OnModuleInit {
       // Only close browser if we created it locally
       if (!browserInstance && browser) await browser.close();
     }
-  }
-
-  @Cron(CronExpression.EVERY_30_MINUTES)
-  async scrapeAllSports() {
-    if (this.isScraping) {
-      this.logger.warn('Scraping already in progress, skipping this run.');
-      return;
-    }
-
-    this.isScraping = true;
-    this.logger.log('Running Scheduled Ingestion for all sports...');
-
-    const sports = [
-      'football',
-      'tennis',
-      'basketball',
-      // 'hockey', 'cricket', 'baseball', 'rugby-union', // Commented out to reduce load for MVP
-      // 'american-football', 'boxing', 'mma', 'motorsport' // Add back as needed
-    ];
-
-    let browser: Browser | null = null;
-    const results = [];
-
-    try {
-      // Launch shared browser instance
-      browser = await chromium.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
-      });
-
-      for (const sport of sports) {
-        try {
-          this.logger.log(`Starting scrape for sport: ${sport}`);
-          // Reuse the single browser instance
-          const result = await this.inspectFlashscoreSelectors(sport, browser);
-          results.push({
-            sport,
-            success: true,
-            count: result.scrapedMatches.length,
-          });
-          // Small delay to let system breathe
-          await new Promise((r) => setTimeout(r, 2000));
-        } catch (error) {
-          this.logger.error(`Failed to scrape sport: ${sport}`, error);
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          results.push({ sport, success: false, error: errorMessage });
-        }
-      }
-    } catch (e) {
-      this.logger.error('Critical scraper error', e);
-    } finally {
-      if (browser) await browser.close();
-      this.isScraping = false;
-    }
-
-    return results;
   }
 
   async findMatchResult(

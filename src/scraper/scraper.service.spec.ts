@@ -4,12 +4,17 @@ import { PrismaService } from '../prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { BettingService } from '../betting/betting.service';
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
 describe('ScraperService', () => {
   let service: ScraperService;
 
   const mockPrismaService = {};
   const mockLlmService = {};
   const mockBettingService = {};
+  const mockEventEmitter = {
+    emit: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -18,6 +23,7 @@ describe('ScraperService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: LlmService, useValue: mockLlmService },
         { provide: BettingService, useValue: mockBettingService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
@@ -55,10 +61,11 @@ describe('ScraperService', () => {
       expect(determine('Half Time')).toBe('IN_PLAY');
     });
 
-    it('should identify Postponed/Cancelled as FINISHED (or ignored)', () => {
+    it('should identify Postponed/Cancelled as AWAITING_RESULTS', () => {
       const determine = (service as any).determineStatus.bind(service);
-      expect(determine('Postponed')).toBe('FINISHED');
-      expect(determine('Canceled')).toBe('FINISHED');
+      expect(determine('Postponed')).toBe('AWAITING_RESULTS');
+      expect(determine('Canceled')).toBe('AWAITING_RESULTS');
+      expect(determine('Cancelled')).toBe('AWAITING_RESULTS');
     });
     /* eslint-enable */
   });
