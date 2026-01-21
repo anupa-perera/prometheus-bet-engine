@@ -137,15 +137,17 @@ Example:
         ${JSON.stringify(marketNames)}
 
         Task:
-        1. Analyze the "Info" string. It typically contains "Consensus: X-Y (Finished)...".
-        2. Determine the WINNING OUTCOME for each market based on this score.
-        3. Even if the text doesn't explicitly say "Full Time", if the Info source is "Consensus" and has a score, assume it is the Final Result.
-        4. ONLY use "VOID" if the score is missing or the match was Abandoned/Cancelled. Do not VOID if you have a valid score (e.g. 2-1).
+        1. Analyze the "Info" string carefully. It usually contains the Final Score (e.g., "Consensus: 100-98", "2-1").
+        2. IF A SCORE EXISTS, DO NOT VOID. You MUST determine the winner based on that score.
+        3. Examples of Scores:
+           - Basketball: "117-130" -> Away Win (130 > 117). Total = 247.
+           - Football: "2-1" -> Home Win. Total = 3.
+        4. ONLY use "VOID" if the match status is explicitly "Cancelled", "Abandoned", or NO score is provided.
 
         Format:
         Return ONLY valid JSON:
         {
-            "matchParams": "Final Score or Summary",
+            "matchParams": "Final Score - Reasoning summary",
             "results": [
                 { "marketName": "Match Winner", "winningOutcome": "Away Win" },
                 { "marketName": "Total Goals", "winningOutcome": "Under 2.5" }
@@ -165,6 +167,9 @@ Example:
           model: 'xiaomi/mimo-v2-flash:free',
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
+          reasoning: {
+            effort: 'high',
+          },
         }),
       });
 
